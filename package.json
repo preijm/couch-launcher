@@ -1,8 +1,8 @@
 {
-  "name": "bank-launcher-tv",
+  "name": "bank-launch-tv",
   "version": "1.0.0",
   "private": true,
-  "description": "Bank Launcher TV - custom Android TV launcher (LG webOS prototype in app/)",
+  "description": "Bank Launch TV - custom Android TV launcher (LG webOS prototype in app/)",
   "scripts": {
     "package": "ares-package app -o dist",
     "install-tv": "node scripts/install.js",

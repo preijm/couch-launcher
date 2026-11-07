@@ -1,4 +1,4 @@
-# Bank Launcher TV
+# Bank Launch TV
 
 My own home screen (launcher) for my Sony TV: big tiles for my apps and the HDMI inputs, plus a clock and a custom background. I use it from the couch (de bank).
 
