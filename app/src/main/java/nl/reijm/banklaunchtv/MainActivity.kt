@@ -375,8 +375,13 @@ class MainActivity : Activity() {
         return try {
             tim.tvInputList
                 .filter { it.type == TvInputInfo.TYPE_HDMI && it.parentId == null && !it.isHidden(this) }
-                .map { (it.loadCustomLabel(this) ?: it.loadLabel(this)).toString() to it.id }
-                .sortedBy { it.first }
+                .sortedBy { it.loadLabel(this).toString() }   // port order: HDMI 1, HDMI 2, ...
+                .map { info ->
+                    val port = info.loadLabel(this).toString()
+                    val custom = info.loadCustomLabel(this)?.toString()
+                    val label = if (custom.isNullOrBlank() || custom == port) port else "$custom ($port)"
+                    label to info.id
+                }
         } catch (e: Exception) {
             Log.w(TAG, "Could not list TV inputs", e); emptyList()
         }
