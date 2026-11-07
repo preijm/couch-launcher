@@ -6,7 +6,7 @@
  * keeps updating by itself), and adds our styling on top.
  */
 (function () {
-  var ACCENT = '#FF6B5E'; // YouTube coral from the home screen
+  var ACCENT = '#FF3B30'; // YouTube red from the home screen
   var LOOK_VERSION = 2;   // raise to re-apply the defaults below once
 
   // 1. TizenTube settings. Must be written before TizenTube's script reads them.
