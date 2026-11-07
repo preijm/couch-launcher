@@ -90,6 +90,14 @@ class UsageRepo(private val ctx: Context) {
         }
     }
 
+    /** Every app's time this year, most watched first (for finding apps missing from the list). */
+    fun topApps(): List<Pair<String, Long>> {
+        val now = System.currentTimeMillis()
+        val yearStart = cal(dayStart(now)).apply { set(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
+        return overlapTotals(UsageStatsManager.INTERVAL_YEARLY, yearStart, now)
+            .toList().sortedByDescending { it.second }
+    }
+
     // ------------------------------------------------------------------ per day
 
     /** Foreground time per package for the day starting at [start]. Finished days are cached. */
@@ -189,12 +197,11 @@ class UsageRepo(private val ctx: Context) {
     companion object {
         private const val HOUR = 3_600_000L
 
-        /** "6h 10m", "0h 50m"; three-digit hours drop the minutes: "148h". */
+        /** "6h 10m", "0h 50m"; from 10 hours on, whole hours only: 43h 35m shows as "44h". */
         fun format(ms: Long): String {
             val totalMin = ms / 60_000
-            val h = totalMin / 60
-            val m = totalMin % 60
-            return if (h >= 100) "${h}h" else "${h}h ${m.toString().padStart(2, '0')}m"
+            if (totalMin >= 10 * 60) return "${(totalMin + 30) / 60}h"
+            return "${totalMin / 60}h ${(totalMin % 60).toString().padStart(2, '0')}m"
         }
     }
 }

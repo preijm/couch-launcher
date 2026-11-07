@@ -171,6 +171,10 @@ class MainActivity : Activity() {
             addDataScheme("package")
         })
         playIntro()
+        // adb shell am start -n nl.reijm.banklaunchtv/.MainActivity --ez topApps true; adb logcat -s BankLaunch
+        if (intent?.getBooleanExtra("topApps", false) == true) io.execute {
+            usage.topApps().take(25).forEach { (pkg, ms) -> Log.i(TAG, "top ${UsageRepo.format(ms)}  $pkg") }
+        }
     }
 
     override fun onStart() {

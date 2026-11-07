@@ -7,7 +7,7 @@
  */
 (function () {
   var ACCENT = '#FF6B5E'; // YouTube coral from the home screen
-  var LOOK_VERSION = 1;   // raise to re-apply the defaults below once
+  var LOOK_VERSION = 2;   // raise to re-apply the defaults below once
 
   // 1. TizenTube settings. Must be written before TizenTube's script reads them.
   try {
@@ -25,6 +25,11 @@
       cfg.focusContainerColor = '#000000';
       cfg.enableShorts = false;
       cfg.showWelcomeToast = false;
+      // Side menu: keep Search, Home and Subscriptions (and the settings gear).
+      cfg.disabledSidebarContents = [
+        'FElibrary', 'FEtopics_music', 'FEtopics_movies', 'FEtopics_gaming',
+        'FEtopics_news', 'FEtopics_sports', 'FEtopics_podcasts',
+      ];
       localStorage['bltv-look'] = String(LOOK_VERSION);
     }
     localStorage[KEY] = JSON.stringify(cfg);
