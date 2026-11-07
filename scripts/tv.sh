@@ -19,7 +19,8 @@ is_ours() { top | grep -q "$PKG"; }
 case "${1:-}" in
   connect)  "$ADB" connect "$2:5555" ;;
   deploy)   ./gradlew assembleDebug -q && "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk \
-              && "$ADB" shell appops set $PKG GET_USAGE_STATS allow \n              && "$ADB" shell am start -n $PKG/.MainActivity ;;
+              && "$ADB" shell appops set $PKG GET_USAGE_STATS allow \
+              && "$ADB" shell am start -n $PKG/.MainActivity ;;
   shot)     mkdir -p shots; f="shots/${2:-tv-$(date +%H%M%S)}.png"; "$ADB" exec-out screencap -p > "$f"; echo "$f" ;;
   packages) "$ADB" shell pm list packages -3 | sort ;;
   home-off)
