@@ -4,9 +4,6 @@
  * Our patched TizenTube Cobalt loads this file instead of TizenTube's own script.
  * It sets a few TizenTube settings, loads the real TizenTube script (so ad blocking
  * keeps updating by itself), and adds our styling on top.
- *
- * Source: github.com/preijm/bank-launch-tv (youtube/theme.js), published to
- * github.com/preijm/bank-launch-tv-yt with `scripts/tv.sh yt-publish`.
  */
 (function () {
   var ACCENT = '#FF6B5E'; // YouTube coral from the home screen
