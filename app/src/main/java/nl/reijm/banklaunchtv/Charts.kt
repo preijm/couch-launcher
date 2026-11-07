@@ -59,6 +59,17 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
         typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     }
     private val days = arrayOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
+    private val TODAY_MIN = 10 * 60_000L
+
+    /** "35m", "1h 20m", "2h". */
+    private fun short(ms: Long): String {
+        val m = ms / 60_000
+        return when {
+            m < 60 -> "${m}m"
+            m % 60 == 0L -> "${m / 60}h"
+            else -> "${m / 60}h ${m % 60}m"
+        }
+    }
     private var values = LongArray(7) { -1L }
     private var color = Color.WHITE
     private var progress = 1f
@@ -74,6 +85,7 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
         val d = resources.displayMetrics.density
         text.textSize = 8 * resources.displayMetrics.scaledDensity
         val labelH = 13 * d
+        val valueH = 12 * d // room above the bars for today's value
         val barMax = height - labelH
         val gap = 5 * d
         val bw = (width - gap * 6) / 7
@@ -85,12 +97,17 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
         for (i in 0 until 7) {
             val v = values[i]
             val x = i * (bw + gap)
-            val h = if (v < 0) 1.5f * d else ((2 * d) + (barMax - 2 * d) * (v / max)) * progress
+            val h = if (v < 0) 1.5f * d else ((2 * d) + (barMax - valueH - 2 * d) * (v / max)) * progress
             paint.color = when { v < 0 -> 0xFF2A2A2A.toInt(); i == today -> color; else -> dim }
             r.set(x, barMax - h, x + bw, barMax)
             c.drawRoundRect(r, 2 * d, 2 * d, paint)
             text.color = if (i == today) Color.WHITE else 0xFF9A9A9A.toInt()
             c.drawText(days[i], x + bw / 2, height - 2 * d, text)
+            // Today's time above its bar, once it's worth mentioning.
+            if (i == today && v >= TODAY_MIN && progress > 0.9f) {
+                text.color = Color.WHITE
+                c.drawText(short(v), x + bw / 2, barMax - h - 3 * d, text)
+            }
         }
     }
 }
