@@ -79,17 +79,37 @@ class GlowView @JvmOverloads constructor(
         super.onDetachedFromWindow()
     }
 
-    override fun onDraw(canvas: Canvas) {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        canvas.drawColor(BASE)
+    // The glow is soft, so it's rendered into a small bitmap and scaled up: same look,
+    // a fraction of the fill work per frame on the TV's GPU.
+    private var small: android.graphics.Bitmap? = null
+    private var smallCanvas: Canvas? = null
+    private val scalePaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+    private val dst = android.graphics.Rect()
 
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w <= 0 || h <= 0) return
+        small?.recycle()
+        small = android.graphics.Bitmap.createBitmap(
+            (w / DOWNSCALE).coerceAtLeast(1), (h / DOWNSCALE).coerceAtLeast(1), android.graphics.Bitmap.Config.ARGB_8888,
+        ).also { smallCanvas = Canvas(it) }
+        dst.set(0, 0, w, h)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val bmp = small
+        val c = smallCanvas
+        if (bmp == null || c == null) { canvas.drawColor(BASE); return }
+        val w = bmp.width.toFloat()
+        val h = bmp.height.toFloat()
+        c.drawColor(BASE)
         // Main light: rises from below the selected tile.
-        blob(canvas, cx * w, h * 1.08f, h * (1.0f + 0.10f * breathe), 0.70f * intensity)
+        blob(c, cx * w, h * 1.08f, h * (1.0f + 0.10f * breathe), 0.70f * intensity)
         // Spill light: a weaker glow drifting in the top-right corner, like light on the wall.
-        blob(canvas, w * (0.88f - 0.05f * breathe), h * (-0.10f + 0.06f * breathe), h * 0.80f, 0.26f * intensity)
+        blob(c, w * (0.88f - 0.05f * breathe), h * (-0.10f + 0.06f * breathe), h * 0.80f, 0.26f * intensity)
         // Floor: keep the bottom edge from going flat.
-        blob(canvas, w * (1f - cx) , h * 1.25f, h * 0.9f, 0.18f * intensity)
+        blob(c, w * (1f - cx), h * 1.25f, h * 0.9f, 0.18f * intensity)
+        canvas.drawBitmap(bmp, null, dst, scalePaint)
     }
 
     private fun blob(c: Canvas, x: Float, y: Float, r: Float, alpha: Float) {
@@ -109,5 +129,6 @@ class GlowView @JvmOverloads constructor(
     companion object {
         /** Deep evening blue, not black: the glow needs something to light up. */
         val BASE = Color.parseColor("#0C1224")
+        private const val DOWNSCALE = 6
     }
 }

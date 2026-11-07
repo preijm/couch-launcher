@@ -69,6 +69,17 @@ class MainActivity : Activity() {
     private val tickReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) = updateClock()
     }
+    /** TV went to standby: replay the intro when it wakes up, so the opening moment happens every time. */
+    private var replayIntro = false
+    private var visible = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            when (i.action) {
+                Intent.ACTION_SCREEN_OFF -> replayIntro = true
+                Intent.ACTION_SCREEN_ON -> if (replayIntro && visible) { replayIntro = false; closeOverlay(); playIntro() }
+            }
+        }
+    }
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             dirty = true
@@ -105,6 +116,7 @@ class MainActivity : Activity() {
         register(tickReceiver, IntentFilter(Intent.ACTION_TIME_TICK).apply {
             addAction(Intent.ACTION_TIME_CHANGED); addAction(Intent.ACTION_TIMEZONE_CHANGED)
         })
+        register(screenReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF).apply { addAction(Intent.ACTION_SCREEN_ON) })
         register(packageReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
@@ -118,17 +130,23 @@ class MainActivity : Activity() {
         super.onStart()
         updateClock()
         glow.resumeBreathing()
+        visible = true
         if (launching) restoreAfterLaunch()
         if (dirty) { buildRow(); revealRowNow() }
+        if (replayIntro && isScreenOn()) { replayIntro = false; closeOverlay(); playIntro() }
     }
 
+    private fun isScreenOn() = (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
+
     override fun onStop() {
+        visible = false
         glow.pauseBreathing()
         super.onStop()
     }
 
     override fun onDestroy() {
         unregisterReceiver(tickReceiver)
+        unregisterReceiver(screenReceiver)
         unregisterReceiver(packageReceiver)
         super.onDestroy()
     }
@@ -467,10 +485,17 @@ class MainActivity : Activity() {
     private fun playIntro() {
         val clock = findViewById<View>(R.id.clockBlock)
         val quiet = listOf(gear, appName, findViewById<View>(R.id.mark))
+        introDone = false
+        current = 0
         glow.setIntensityNow(0f)
-        clock.alpha = 0f; clock.translationY = dp(28).toFloat()
-        quiet.forEach { it.alpha = 0f }
-        tiles.forEach { it.view.alpha = 0f; it.view.translationY = dp(48).toFloat() }
+        clock.animate().cancel(); clock.alpha = 0f; clock.translationY = dp(28).toFloat()
+        quiet.forEach { it.animate().cancel(); it.alpha = 0f }
+        tiles.forEach {
+            it.view.animate().cancel()
+            it.view.foreground = null
+            it.view.scaleX = 1f; it.view.scaleY = 1f; it.view.translationZ = 0f
+            it.view.alpha = 0f; it.view.translationY = dp(48).toFloat()
+        }
 
         root.post {
             tiles.firstOrNull()?.let { glow.focusOn(Color.parseColor(it.spec.glow), tileCenterFraction(it.view)) }
