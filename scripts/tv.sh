@@ -6,10 +6,14 @@
 #   packages       list installed third-party packages
 #   home-off       make Bank Launch TV the Home screen (disables Google TV home only if needed)
 #   home-on        undo: bring the Google TV home back
+#   yt-publish     upload youtube/theme.js (our YouTube look) and clear the CDN cache
+#   yt-install     install our TizenTube build (make it with scripts/tizentube.sh)
+#   yt-restart     restart YouTube on the TV
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ADB="${ADB:-$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe}"
 PKG=nl.reijm.banklaunchtv
+YT=io.gh.reisxd.tizentube.cobalt
 STOCK_HOME=(com.google.android.apps.tv.launcherx com.google.android.tungsten.setupwraith)
 TV="${TV:-192.168.x.x:5555}"
 export ANDROID_SERIAL="${ANDROID_SERIAL:-$TV}"
@@ -36,5 +40,20 @@ case "${1:-}" in
   home-on)
     for p in "${STOCK_HOME[@]}"; do "$ADB" shell pm enable "$p"; done
     "$ADB" shell input keyevent 3 ;;
-  *) sed -n '2,10p' "$0" ;;
+  yt-publish)
+    # Upload youtube/theme.js to the public repo and clear jsDelivr's cache of it.
+    sha=$(gh api repos/preijm/bank-launch-tv-yt/contents/theme.js -q .sha)
+    gh api -X PUT repos/preijm/bank-launch-tv-yt/contents/theme.js -f message="${2:-Update theme.js}" \
+      -f content="$(base64 -w0 youtube/theme.js)" -f sha="$sha" -q .commit.sha
+    curl -s "https://purge.jsdelivr.net/gh/preijm/bank-launch-tv-yt@main/theme.js" >/dev/null
+    echo "Published. Restart YouTube on the TV: tv.sh yt-restart" ;;
+  yt-install)
+    apk=$(ls -t build/tizentube/tizentube-bltv-*.apk | head -1)
+    if ! "$ADB" install -r "$apk"; then
+      echo "Replacing the official TizenTube (different signature; YouTube sign-in is lost once)"
+      "$ADB" uninstall $YT && "$ADB" install "$apk"
+    fi ;;
+  yt-restart)
+    "$ADB" shell am force-stop $YT; "$ADB" shell monkey -p $YT -c android.intent.category.LAUNCHER 1 >/dev/null ;;
+  *) sed -n '2,11p' "$0" ;;
 esac
