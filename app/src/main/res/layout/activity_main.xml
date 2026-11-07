@@ -4,107 +4,139 @@
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@color/base"
     android:clipChildren="false">
 
-    <nl.reijm.banklaunchtv.GlowView
-        android:id="@+id/glow"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
+    <!-- Left: time, this week's total, buttons -->
     <LinearLayout
-        android:id="@+id/clockBlock"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:id="@+id/left"
+        android:layout_width="300dp"
+        android:layout_height="match_parent"
         android:layout_marginStart="64dp"
-        android:layout_marginTop="44dp"
+        android:layout_marginTop="50dp"
+        android:layout_marginBottom="44dp"
         android:orientation="vertical">
-
-        <TextView
-            android:id="@+id/greeting"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="4dp"
-            android:fontFamily="sans-serif-light"
-            android:textColor="@color/ink_soft"
-            android:textSize="22sp" />
 
         <TextView
             android:id="@+id/clock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="-6dp"
-            android:fontFamily="sans-serif-thin"
+            android:fontFamily="sans-serif-light"
             android:includeFontPadding="false"
             android:letterSpacing="-0.02"
             android:textColor="@color/ink"
-            android:textSize="132sp" />
+            android:textSize="84sp" />
 
         <TextView
             android:id="@+id/date"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="6dp"
-            android:layout_marginTop="-14dp"
-            android:fontFamily="sans-serif"
+            android:layout_marginStart="3dp"
+            android:layout_marginTop="2dp"
             android:textColor="@color/ink_soft"
-            android:textSize="20sp" />
+            android:textSize="14sp" />
+
+        <Space
+            android:layout_width="1dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="2dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.12"
+            android:text="DEZE WEEK OP TV"
+            android:textColor="@color/ink_soft"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/weekTotal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-light"
+            android:includeFontPadding="false"
+            android:letterSpacing="-0.02"
+            android:text="–"
+            android:textColor="@color/ink"
+            android:textSize="46sp" />
+
+        <nl.reijm.banklaunchtv.SegmentBar
+            android:id="@+id/segments"
+            android:layout_width="250dp"
+            android:layout_height="3dp"
+            android:layout_marginTop="12dp" />
+
+        <TextView
+            android:id="@+id/perDay"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="2dp"
+            android:layout_marginTop="10dp"
+            android:textColor="@color/ink_soft"
+            android:textSize="11sp" />
+
+        <LinearLayout
+            android:id="@+id/buttons"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="30dp"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/btnSettings"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/round_btn_bg"
+                android:contentDescription="Instellingen van de tv"
+                android:padding="9dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_settings"
+                android:tint="@color/round_btn_icon" />
+
+            <ImageButton
+                android:id="@+id/btnInputs"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/round_btn_bg"
+                android:contentDescription="Ingangen"
+                android:padding="9dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_tv"
+                android:tint="@color/round_btn_icon" />
+
+            <ImageButton
+                android:id="@+id/btnApps"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:background="@drawable/round_btn_bg"
+                android:contentDescription="Alle apps"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/ic_grid"
+                android:tint="@color/round_btn_icon" />
+        </LinearLayout>
     </LinearLayout>
 
-    <ImageButton
-        android:id="@+id/gear"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:layout_gravity="top|end"
-        android:layout_marginTop="44dp"
-        android:layout_marginEnd="64dp"
-        android:background="@drawable/gear_bg"
-        android:contentDescription="Instellingen en meer"
-        android:focusable="true"
-        android:padding="12dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_gear" />
-
+    <!-- Right: the apps -->
     <LinearLayout
-        android:id="@+id/row"
-        android:layout_width="wrap_content"
+        android:id="@+id/list"
+        android:layout_width="460dp"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_marginStart="64dp"
-        android:layout_marginBottom="118dp"
-        android:clipChildren="false"
-        android:clipToPadding="false"
-        android:orientation="horizontal" />
+        android:layout_gravity="end|center_vertical"
+        android:layout_marginEnd="56dp"
+        android:animateLayoutChanges="true"
+        android:orientation="vertical" />
 
-    <TextView
-        android:id="@+id/appName"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|start"
-        android:layout_marginStart="66dp"
-        android:layout_marginBottom="52dp"
-        android:fontFamily="sans-serif-medium"
-        android:textColor="@color/ink"
-        android:textSize="28sp" />
-
-    <TextView
-        android:id="@+id/mark"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="bottom|end"
-        android:layout_marginEnd="64dp"
-        android:layout_marginBottom="58dp"
-        android:fontFamily="sans-serif-light"
-        android:letterSpacing="0.04"
-        android:text="bank launch tv"
-        android:textColor="@color/ink_faint"
-        android:textSize="15sp" />
-
-    <!-- Settings & more: dims the home screen and shows a panel. -->
+    <!-- Inputs / all apps: dims the home screen and shows a panel. -->
     <FrameLayout
         android:id="@+id/overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#B3070B18"
+        android:background="#CC000000"
         android:visibility="gone">
 
         <LinearLayout
@@ -124,7 +156,7 @@
                 android:layout_marginBottom="18dp"
                 android:fontFamily="sans-serif-medium"
                 android:textColor="@color/ink"
-                android:textSize="24sp" />
+                android:textSize="22sp" />
 
             <ScrollView
                 android:id="@+id/panelScroll"

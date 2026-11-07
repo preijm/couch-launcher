@@ -1,35 +1,29 @@
 package nl.reijm.banklaunchtv
 
 /**
- * The apps on the home row, in this order.
+ * The apps in the home list, in this order.
  *
- * Each app is found by the first installed package in [AppSpec.packages]. If none of those
- * is installed, it falls back to an app whose label matches one of [AppSpec.labels].
- * [AppSpec.glow] is the colour the background takes on when that app is selected.
+ * Each app is found by the first installed package in [AppSpec.packages]. Watch time is
+ * counted over all of them together, so YouTube history from before SmartTube still shows.
  *
  * List what's installed on the TV with:  adb shell pm list packages -3
  */
 data class AppSpec(
     val name: String,
-    val glow: String,
+    val icon: Int,
     val packages: List<String>,
-    val labels: List<String> = listOf(name),
 )
 
 object Config {
     val apps = listOf(
+        // SmartTube first: ad-free YouTube. Official YouTube only as a fallback.
         AppSpec(
-            "YouTube", "#FF2A2A",
-            // SmartTube first: ad-free YouTube. Official YouTube only as a fallback.
+            "YouTube", R.drawable.ic_youtube,
             listOf("org.smarttube.stable", "org.smarttube.beta", "com.google.android.youtube.tv"),
-            listOf("SmartTube", "YouTube"),
         ),
-        AppSpec("Netflix", "#E50914", listOf("com.netflix.ninja")),
-        AppSpec("NOS", "#F04E23", listOf("nl.nos.app", "nl.nos.tv", "nl.nos.androidtv")),
-        AppSpec("NPO Start", "#FF8A00", listOf("nl.npo.player", "nl.uitzendinggemist", "nl.npo.start"), listOf("NPO Start", "NPO")),
-        AppSpec("Prime Video", "#1A98FF", listOf("com.amazon.amazonvideo.livingroom"), listOf("Prime Video")),
+        AppSpec("Netflix", R.drawable.ic_netflix, listOf("com.netflix.ninja")),
+        AppSpec("NOS", R.drawable.ic_nos, listOf("nl.nos.app")),
+        AppSpec("NPO Start", R.drawable.ic_npo, listOf("nl.uitzendinggemist")),
+        AppSpec("Prime Video", R.drawable.ic_prime, listOf("com.amazon.amazonvideo.livingroom")),
     )
-
-    /** Glow colour when the settings button is selected. */
-    const val SETTINGS_GLOW = "#6B7CFF"
 }

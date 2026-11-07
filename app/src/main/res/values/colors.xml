@@ -1,6 +1,7 @@
 <resources>
-    <color name="base">#0C1224</color>
-    <color name="ink">#F5F1EA</color>
-    <color name="ink_soft">#B3F5F1EA</color>
-    <color name="ink_faint">#59F5F1EA</color>
+    <color name="base">#000000</color>
+    <color name="ink">#FFFFFF</color>
+    <color name="ink_soft">#8C8C8C</color>
+    <color name="ink_faint">#5C5C5C</color>
+    <color name="label">#7F8BA3</color>
 </resources>
