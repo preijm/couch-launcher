@@ -32,10 +32,33 @@
     console.warn('[bltv] settings failed', e);
   }
 
+  // YouTube's page only runs scripts and styles that carry its nonce, and only accepts
+  // script URLs that went through a Trusted Types policy. Borrow the nonce, make a policy.
+  function nonceOf(sel) {
+    var e = document.querySelector(sel);
+    return (e && (e.nonce || e.getAttribute('nonce'))) || '';
+  }
+  var policy = null;
+  try {
+    if (window.trustedTypes && trustedTypes.createPolicy) {
+      policy = trustedTypes.createPolicy('bltv', { createScriptURL: function (u) { return u; } });
+    }
+  } catch (e) {
+    console.warn('[bltv] no Trusted Types policy', e);
+  }
+
   // 2. The real TizenTube script, always the latest version.
-  var s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?v=' + Date.now();
-  (document.head || document.documentElement).appendChild(s);
+  try {
+    var url = 'https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?v=' + Date.now();
+    var s = document.createElement('script');
+    s.nonce = nonceOf('script[nonce]');
+    s.src = policy ? policy.createScriptURL(url) : url;
+    s.onload = function () { console.info('[bltv] TizenTube loaded'); };
+    s.onerror = function () { console.error('[bltv] TizenTube failed to load'); };
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) {
+    console.error('[bltv] could not load TizenTube', e);
+  }
 
   // 3. Our look.
   var css = [
@@ -50,10 +73,11 @@
     if (document.getElementById('bltv-style')) return;
     var st = document.createElement('style');
     st.id = 'bltv-style';
+    st.nonce = nonceOf('style[nonce]');
     st.textContent = css;
     (document.head || document.documentElement).appendChild(st);
   }
-  addStyle();
+  try { addStyle(); } catch (e) { console.error('[bltv] style failed', e); }
   document.addEventListener('DOMContentLoaded', addStyle);
   console.info('[bltv] look v' + LOOK_VERSION + ' loaded'); // visible in adb logcat
 })();
