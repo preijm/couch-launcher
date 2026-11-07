@@ -13,7 +13,7 @@ PKG=nl.reijm.banklaunchtv
 STOCK_HOME=(com.google.android.apps.tv.launcherx com.google.android.tungsten.setupwraith)
 TV="${TV:-192.168.x.x:5555}"
 export ANDROID_SERIAL="${ANDROID_SERIAL:-$TV}"
-top() { "$ADB" shell dumpsys activity activities | grep -m1 topResumedActivity; }
+top() { "$ADB" shell dumpsys activity activities | grep -m1 -E "topResumedActivity|mResumedActivity"; }
 is_ours() { top | grep -q "$PKG"; }
 
 case "${1:-}" in
