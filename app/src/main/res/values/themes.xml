@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.BankLaunch" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/bg_full</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:colorAccent">#E8A33D</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+</resources>

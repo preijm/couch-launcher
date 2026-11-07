@@ -1,6 +1,0 @@
-{
-  "version": "0.0.1",
-  "configurations": [
-    { "name": "tegel", "runtimeExecutable": "npx", "runtimeArgs": ["--yes", "http-server", "app", "-p", "5173", "-c-1"], "port": 5173 }
-  ]
-}
