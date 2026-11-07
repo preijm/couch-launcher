@@ -9,7 +9,7 @@ package nl.reijm.banklaunchtv
  */
 object Config {
     val favourites = listOf(
-        "com.teamsmart.videomanager.tv",        // SmartTube (ad-free YouTube) - verify
+        "org.smarttube.stable",                 // SmartTube (ad-free YouTube)
         "com.google.android.youtube.tv",        // YouTube
         "com.netflix.ninja",                    // Netflix
         "com.amazon.amazonvideo.livingroom",    // Prime Video
