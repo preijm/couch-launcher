@@ -94,35 +94,35 @@
 
             <ImageButton
                 android:id="@+id/btnSettings"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginEnd="8dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="12dp"
                 android:background="@drawable/round_btn_bg"
-                android:contentDescription="Instellingen van de tv"
-                android:padding="9dp"
+                android:contentDescription="TV settings"
+                android:padding="10dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_settings"
                 android:tint="@color/round_btn_icon" />
 
             <ImageButton
                 android:id="@+id/btnInputs"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginEnd="8dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="12dp"
                 android:background="@drawable/round_btn_bg"
-                android:contentDescription="Ingang wisselen"
-                android:padding="9dp"
+                android:contentDescription="Switch input"
+                android:padding="10dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_tv"
                 android:tint="@color/round_btn_icon" />
 
             <ImageButton
                 android:id="@+id/btnApps"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="@drawable/round_btn_bg"
-                android:contentDescription="Alle apps"
-                android:padding="10dp"
+                android:contentDescription="All apps"
+                android:padding="11dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_grid"
                 android:tint="@color/round_btn_icon" />

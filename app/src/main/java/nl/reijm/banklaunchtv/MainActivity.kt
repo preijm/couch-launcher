@@ -46,9 +46,9 @@ import java.util.concurrent.Executors
 class MainActivity : Activity() {
 
     private enum class Period(val button: String, val label: String) {
-        WEEK("Week", "DEZE WEEK OP TV"),
-        MONTH("Maand", "DEZE MAAND OP TV"),
-        YEAR("Jaar", "DIT JAAR OP TV"),
+        WEEK("Week", "THIS WEEK ON TV"),
+        MONTH("Month", "THIS MONTH ON TV"),
+        YEAR("Year", "THIS YEAR ON TV"),
     }
 
     /** An installed app as found on the TV. */
@@ -74,10 +74,10 @@ class MainActivity : Activity() {
         val bars: WeekBars,
     )
 
-    private val nl = Locale("nl", "NL")
-    private val timeFmt = SimpleDateFormat("HH:mm", nl)
-    private val dateFmt = SimpleDateFormat("EEEE d MMMM", nl)
-    private val monthFmt = SimpleDateFormat("MMMM", nl)
+    private val en = Locale.UK
+    private val timeFmt = SimpleDateFormat("HH:mm", en)
+    private val dateFmt = SimpleDateFormat("EEEE d MMMM", en)
+    private val monthFmt = SimpleDateFormat("MMMM", en)
 
     private lateinit var root: FrameLayout
     private lateinit var left: View
@@ -143,7 +143,7 @@ class MainActivity : Activity() {
         panelBody = findViewById(R.id.panelBody)
         panelScroll = findViewById(R.id.panelScroll)
         usage = UsageRepo(this)
-        list.layoutTransition.enableTransitionType(LayoutTransition.CHANGING)
+        list.layoutTransition = smoothTransition()
 
         val btnSettings = findViewById<ImageButton>(R.id.btnSettings)
         val btnInputs = findViewById<ImageButton>(R.id.btnInputs)
@@ -153,7 +153,7 @@ class MainActivity : Activity() {
             if (Build.VERSION.SDK_INT >= 26) b.defaultFocusHighlightEnabled = false
             b.setOnKeyListener(toListOnRight)
         }
-        btnSettings.setOnClickListener { startSafely(Intent(Settings.ACTION_SETTINGS), "Instellingen") }
+        btnSettings.setOnClickListener { startSafely(Intent(Settings.ACTION_SETTINGS), "Settings") }
         btnInputs.setOnClickListener { showInputs() }
         btnApps.setOnClickListener { showAllApps() }
 
@@ -239,7 +239,7 @@ class MainActivity : Activity() {
         findViewById<TextView>(R.id.date).text = dateFmt.format(now)
     }
 
-    /** Week / Maand / Jaar: moving onto an option selects it, like tabs. */
+    /** Week / Month / Year: moving onto an option selects it, like tabs. */
     private fun buildPeriodSwitch() {
         periodBar.removeAllViews()
         periodButtons.clear()
@@ -247,8 +247,8 @@ class MainActivity : Activity() {
             val b = TextView(this).apply {
                 text = p.button
                 gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                setPadding(dp(12), 0, dp(12), 0)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setPadding(dp(14), 0, dp(14), 0)
                 isFocusable = true
                 isFocusableInTouchMode = true
                 isClickable = true
@@ -258,7 +258,7 @@ class MainActivity : Activity() {
                 setOnKeyListener(toListOnRight)
             }
             periodButtons += b
-            periodBar.addView(b, LinearLayout.LayoutParams(-2, dp(24)).apply { if (p != Period.YEAR) marginEnd = dp(3) })
+            periodBar.addView(b, LinearLayout.LayoutParams(-2, dp(28)).apply { if (p != Period.YEAR) marginEnd = dp(4) })
         }
         stylePeriodButtons()
     }
@@ -270,18 +270,38 @@ class MainActivity : Activity() {
         showStats(stats, hasUsage)
     }
 
+    /**
+     * Two clearly different looks, so you can see when you're on the switch:
+     * not on it: the chosen period is a quiet grey pill; on it: a bright white pill, slightly bigger.
+     */
     private fun stylePeriodButtons() {
+        val active = periodButtons.any { it.isFocused }
         periodButtons.forEachIndexed { i, b ->
             val selected = Period.values()[i] == period
-            val focused = b.isFocused
             b.background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
-                setColor(if (selected) Color.WHITE else Color.TRANSPARENT)
-                if (focused && !selected) setStroke(dp(1), Color.WHITE)
+                cornerRadius = dp(14).toFloat()
+                setColor(
+                    when {
+                        selected && active -> Color.WHITE
+                        selected -> 0xFF2E2E2E.toInt()
+                        else -> Color.TRANSPARENT
+                    },
+                )
             }
-            b.setTextColor(if (selected) Color.BLACK else 0xFFB5B5B5.toInt())
+            b.setTextColor(
+                when {
+                    selected && active -> Color.BLACK
+                    selected -> Color.WHITE
+                    active -> 0xFFD0D0D0.toInt()
+                    else -> 0xFF8A8A8A.toInt()
+                },
+            )
             b.typeface = Typeface.create(if (selected) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
         }
+        periodBar.pivotX = 0f
+        periodBar.pivotY = periodBar.height / 2f
+        periodBar.animate().scaleX(if (active) 1.12f else 1f).scaleY(if (active) 1.12f else 1f)
+            .setDuration(180).setInterpolator(DecelerateInterpolator()).start()
     }
 
     // ------------------------------------------------------------------ stats
@@ -313,7 +333,7 @@ class MainActivity : Activity() {
             if (ok) Config.apps.mapIndexed { i, a -> values[i] to Color.parseColor(a.color) } else emptyList(),
         )
         findViewById<TextView>(R.id.perDay).text =
-            if (ok) "≈ ${UsageRepo.format(total / daysInPeriod())} per dag" else "Kijktijd nog niet beschikbaar"
+            if (ok) "≈ ${UsageRepo.format(total / daysInPeriod())} per day" else "Watch time not available yet"
         rows.forEach { fillRow(it) }
     }
 
@@ -333,10 +353,10 @@ class MainActivity : Activity() {
         val total = Config.apps.sumOf { valueFor(stats[it.name]) }
         val max = Config.apps.maxOf { valueFor(stats[it.name]) }.coerceAtLeast(1L)
         val now = Date()
-        r.time.text = if (r.app == null && !demo) "niet op de tv" else if (hasUsage) UsageRepo.format(v) else ""
+        r.time.text = if (r.app == null && !demo) "not on this TV" else if (hasUsage) UsageRepo.format(v) else ""
         r.share.setValue(if (hasUsage) v.toFloat() / max else 0f, r.color)
         r.pct.text = if (hasUsage && total > 0) "${(v * 100 / total)}%" else "–"
-        r.monthLabel.text = monthFmt.format(now).uppercase(nl)
+        r.monthLabel.text = monthFmt.format(now).uppercase(en)
         r.month.text = st?.let { UsageRepo.format(it.month) } ?: "–"
         r.yearLabel.text = Calendar.getInstance().get(Calendar.YEAR).toString()
         r.year.text = st?.let { UsageRepo.format(it.year) } ?: "–"
@@ -409,7 +429,7 @@ class MainActivity : Activity() {
             isClickable = true
             contentDescription = spec.name
             if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
-            layoutTransition = LayoutTransition().apply { enableTransitionType(LayoutTransition.CHANGING) }
+            layoutTransition = smoothTransition()
         }
 
         // Header: icon, name, (share line | dot), time
@@ -432,6 +452,7 @@ class MainActivity : Activity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
             gravity = Gravity.END
+            minWidth = dp(96) // "43h 35m" and "362h" take the same space, so the bars line up
         }
         header.addView(icon, LinearLayout.LayoutParams(dp(20), dp(20)))
         header.addView(name, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) })
@@ -451,9 +472,9 @@ class MainActivity : Activity() {
             detail.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(20) })
             return l to v
         }
-        val (_, pct) = stat("AANDEEL")
-        val (monthLabel, month) = stat("MAAND")
-        val (yearLabel, year) = stat("JAAR")
+        val (_, pct) = stat("SHARE")
+        val (monthLabel, month) = stat("MONTH")
+        val (yearLabel, year) = stat("YEAR")
         val bars = WeekBars(this)
         detail.addView(bars, LinearLayout.LayoutParams(0, dp(48), 1.8f))
         view.addView(detail, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16); bottomMargin = dp(4) })
@@ -469,32 +490,45 @@ class MainActivity : Activity() {
         r.dot.visibility = if (on) View.VISIBLE else View.GONE
         r.view.setPadding(dp(22), dp(if (on) 18 else 9), dp(22), dp(if (on) 18 else 9))
         ValueAnimator.ofInt(r.bg.alpha, if (on) 255 else 0).apply {
-            duration = 220
+            duration = ANIM
             addUpdateListener { r.bg.alpha = it.animatedValue as Int }
             start()
         }
+        // Sizes jump to their final value at once, so the card animates to its final height in
+        // one movement. The grow/shrink is then shown with scale, which doesn't move the layout.
+        val s0 = r.name.textSize
+        r.name.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (on) NAME_BIG else NAME_SMALL)
+        val t0 = r.time.textSize
+        r.time.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (on) 20f else 16f)
+        val i0 = r.icon.layoutParams.width.toFloat()
+        (r.icon.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (on) 26 else 20); height = width }
+        r.icon.requestLayout()
+        fun grow(v: View, from: Float, pivotEnd: Boolean = false) {
+            v.pivotX = if (pivotEnd) v.width.toFloat() else 0f
+            v.pivotY = v.height / 2f
+            v.animate().cancel()
+            v.scaleX = from; v.scaleY = from
+            v.animate().scaleX(1f).scaleY(1f).setDuration(ANIM).setInterpolator(DecelerateInterpolator(1.6f)).start()
+        }
+        grow(r.name, s0 / r.name.textSize)
+        grow(r.time, t0 / r.time.textSize, pivotEnd = true)
+        grow(r.icon, i0 / r.icon.layoutParams.width)
+        r.name.typeface = Typeface.create(if (on) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
+        r.name.letterSpacing = if (on) -0.03f else -0.02f
+
         val c0 = r.name.currentTextColor
         val c1 = if (on) Color.WHITE else DIM
-        val s0 = r.name.textSize / resources.displayMetrics.scaledDensity
-        val s1 = if (on) NAME_BIG else NAME_SMALL
         ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 240
+            duration = ANIM
             interpolator = DecelerateInterpolator()
             addUpdateListener {
-                val f = it.animatedValue as Float
-                r.name.setTextSize(TypedValue.COMPLEX_UNIT_SP, s0 + (s1 - s0) * f)
-                val c = ArgbEvaluator().evaluate(f, c0, c1) as Int
+                val c = ArgbEvaluator().evaluate(it.animatedValue as Float, c0, c1) as Int
                 r.name.setTextColor(c)
+                r.time.setTextColor(c)
                 r.icon.imageTintList = ColorStateList.valueOf(c)
             }
             start()
         }
-        r.name.typeface = Typeface.create(if (on) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
-        r.name.letterSpacing = if (on) -0.03f else -0.02f
-        r.time.setTextColor(if (on) Color.WHITE else DIM)
-        r.time.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (on) 20f else 16f)
-        (r.icon.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (on) 26 else 20); height = width }
-        r.icon.requestLayout()
         if (on) r.bars.setValues(stats[r.spec.name]?.weekDays ?: LongArray(7) { -1L }, r.color)
     }
 
@@ -503,13 +537,13 @@ class MainActivity : Activity() {
     private fun open(r: Row) {
         val app = r.app
         if (app == null) {
-            if (!demo) Toast.makeText(this, "${r.spec.name} staat nog niet op de tv", Toast.LENGTH_LONG).show()
+            if (!demo) Toast.makeText(this, "${r.spec.name} isn't installed on this TV", Toast.LENGTH_LONG).show()
             return
         }
         val pm = packageManager
         val intent = pm.getLeanbackLaunchIntentForPackage(app.pkg) ?: pm.getLaunchIntentForPackage(app.pkg)
         if (intent == null) {
-            Toast.makeText(this, "${r.spec.name} kan niet worden geopend", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Couldn't open ${r.spec.name}", Toast.LENGTH_LONG).show()
             return
         }
         launching = true
@@ -524,7 +558,7 @@ class MainActivity : Activity() {
             startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {
             Log.w(TAG, "Could not open $label", e)
-            Toast.makeText(this, "$label kan niet worden geopend", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Couldn't open $label", Toast.LENGTH_LONG).show()
             launching = false
             root.alpha = 1f
         }
@@ -541,8 +575,8 @@ class MainActivity : Activity() {
                 startSafely(Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(id)), label)
             }
         }
-        if (inputs.isEmpty()) showPanel("Ingangen", listOf("Geen ingangen gevonden" to { closeOverlay() }))
-        else showPanel("Ingangen", inputs)
+        if (inputs.isEmpty()) showPanel("Inputs", listOf("No inputs found" to { closeOverlay() }))
+        else showPanel("Inputs", inputs)
     }
 
     private fun hdmiInputs(): List<Pair<String, String>> {
@@ -564,7 +598,7 @@ class MainActivity : Activity() {
 
     private fun showAllApps() {
         val apps = installedApps().values.filter { it.pkg != packageName }.sortedBy { it.label.lowercase() }
-        panelTitle.text = "Alle apps"
+        panelTitle.text = "All apps"
         panelBody.removeAllViews()
         apps.chunked(4).forEach { chunk ->
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
@@ -690,10 +724,28 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
+    /**
+     * Android's default layout animation waits before resizing and before fading new parts in,
+     * which made the card grow in two steps. Everything here starts at once, with one duration.
+     */
+    private fun smoothTransition() = LayoutTransition().apply {
+        enableTransitionType(LayoutTransition.CHANGING)
+        listOf(
+            LayoutTransition.APPEARING, LayoutTransition.DISAPPEARING,
+            LayoutTransition.CHANGE_APPEARING, LayoutTransition.CHANGE_DISAPPEARING, LayoutTransition.CHANGING,
+        ).forEach {
+            setStartDelay(it, 0)
+            setDuration(it, ANIM)
+            setInterpolator(it, DecelerateInterpolator(1.6f))
+        }
+    }
+
     companion object {
         private const val TAG = "BankLaunch"
         private val DIM = Color.parseColor("#8A8A8A")
         private const val NAME_SMALL = 28f
         private const val NAME_BIG = 40f
+        /** One duration for everything that moves when the selection changes. */
+        private const val ANIM = 260L
     }
 }

@@ -25,7 +25,8 @@ class AppStats(
  * Per-day totals are worked out from the usage events (exact, but Android only keeps those for
  * a limited time), and finished days are saved here so week/month/year stay complete later on.
  * For periods that started before this app was tracking, Android's own month/year totals are
- * used when they are larger.
+ * used when they are larger. Android's "yearly" record doesn't follow the calendar (on this TV
+ * it runs from 2 November), so for the year we take the part of each record that falls in it.
  *
  * Needs the usage-access permission, granted once with:
  *   adb shell appops set nl.reijm.banklaunchtv GET_USAGE_STATS allow
@@ -68,7 +69,7 @@ class UsageRepo(private val ctx: Context) {
         val savedYear = savedDays().filter { (day, _) -> day in yearStart until from }
 
         val monthly = systemTotals(UsageStatsManager.INTERVAL_MONTHLY, monthStart, now)
-        val yearly = systemTotals(UsageStatsManager.INTERVAL_YEARLY, yearStart, now)
+        val yearly = overlapTotals(UsageStatsManager.INTERVAL_YEARLY, yearStart, now)
         val weekly = systemTotals(UsageStatsManager.INTERVAL_WEEKLY, weekStart, now)
 
         return specs.associate { spec ->
@@ -148,6 +149,23 @@ class UsageRepo(private val ctx: Context) {
         return out
     }
 
+    /**
+     * Android's bucket totals, counting each bucket for the share of its time span that falls
+     * inside [periodStart, now]. Assumes watching was spread evenly over the bucket: an estimate.
+     */
+    private fun overlapTotals(interval: Int, periodStart: Long, now: Long): Map<String, Long> {
+        val out = HashMap<String, Long>()
+        usm.queryUsageStats(interval, periodStart, now)?.forEach { u ->
+            val span = u.lastTimeStamp - u.firstTimeStamp
+            if (span <= 0 || u.totalTimeInForeground <= 0) return@forEach
+            val inside = minOf(u.lastTimeStamp, now) - maxOf(u.firstTimeStamp, periodStart)
+            if (inside <= 0) return@forEach
+            val part = (u.totalTimeInForeground * (inside.toDouble() / span)).toLong()
+            out[u.packageName] = (out[u.packageName] ?: 0L) + part
+        }
+        return out
+    }
+
     private fun savedDays(): Map<Long, Map<String, Long>> =
         prefs.all.mapNotNull { (k, v) ->
             if (!k.startsWith("d:") || v !is String) return@mapNotNull null
@@ -171,12 +189,12 @@ class UsageRepo(private val ctx: Context) {
     companion object {
         private const val HOUR = 3_600_000L
 
-        /** "6u 10m", "0u 50m"; three-digit hours drop the minutes: "148u". */
+        /** "6h 10m", "0h 50m"; three-digit hours drop the minutes: "148h". */
         fun format(ms: Long): String {
             val totalMin = ms / 60_000
             val h = totalMin / 60
             val m = totalMin % 60
-            return if (h >= 100) "${h}u" else "${h}u ${m.toString().padStart(2, '0')}m"
+            return if (h >= 100) "${h}h" else "${h}h ${m.toString().padStart(2, '0')}m"
         }
     }
 }

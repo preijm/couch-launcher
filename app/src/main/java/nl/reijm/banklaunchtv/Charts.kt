@@ -58,7 +58,7 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
         textAlign = Paint.Align.CENTER
         typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     }
-    private val days = arrayOf("ma", "di", "wo", "do", "vr", "za", "zo")
+    private val days = arrayOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
     private var values = LongArray(7) { -1L }
     private var color = Color.WHITE
     private var progress = 1f
