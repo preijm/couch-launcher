@@ -15,8 +15,8 @@ class AppStats(
     val week: Long,
     val month: Long,
     val year: Long,
-    /** Last 7 days, oldest first; the last entry is today. */
-    val last7: LongArray,
+    /** This week Monday..Sunday; days still to come are -1. */
+    val weekDays: LongArray,
 )
 
 /**
@@ -56,8 +56,8 @@ class UsageRepo(private val ctx: Context) {
         val monthStart = cal(today).apply { set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
         val yearStart = cal(today).apply { set(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
 
-        // Every day we need per-day totals for: this month and the last 7 days.
-        val from = minOf(monthStart, weekStart, addDays(today, -6))
+        // Every day we need per-day totals for: this month and this week.
+        val from = minOf(monthStart, weekStart)
         val perDay = LinkedHashMap<Long, Map<String, Long>>()
         var d = from
         while (d <= today) {
@@ -76,12 +76,15 @@ class UsageRepo(private val ctx: Context) {
             val week = perDay.filterKeys { it >= weekStart }.values.sumOf { sum(it) }
             val month = perDay.filterKeys { it >= monthStart }.values.sumOf { sum(it) }
             val year = perDay.filterKeys { it >= yearStart }.values.sumOf { sum(it) } + savedYear.values.sumOf { sum(it) }
-            val last7 = LongArray(7) { i -> sum(perDay[addDays(today, i - 6)]) }
+            val weekDays = LongArray(7) { i ->
+                val day = addDays(weekStart, i)
+                if (day > today) -1L else sum(perDay[day])
+            }
             spec.name to AppStats(
                 week = maxOf(week, sum(weekly)),
                 month = maxOf(month, sum(monthly)),
                 year = maxOf(year, sum(yearly), month),
-                last7 = last7,
+                weekDays = weekDays,
             )
         }
     }

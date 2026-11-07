@@ -38,43 +38,59 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
 
+    private enum class Period(val button: String, val label: String) {
+        WEEK("Week", "DEZE WEEK OP TV"),
+        MONTH("Maand", "DEZE MAAND OP TV"),
+        YEAR("Jaar", "DIT JAAR OP TV"),
+    }
+
     /** An installed app as found on the TV. */
     private class Installed(val pkg: String, val label: String, val banner: Drawable?)
 
     private class Row(
         val spec: AppSpec,
+        val color: Int,
         val app: Installed?,
         val view: LinearLayout,
         val bg: GradientDrawable,
         val icon: ImageView,
         val name: TextView,
+        val dot: View,
         val time: TextView,
+        val share: ShareLine,
         val detail: View,
-        val week: TextView,
+        val pct: TextView,
+        val monthLabel: TextView,
         val month: TextView,
+        val yearLabel: TextView,
         val year: TextView,
-        val bars: MiniBars,
+        val bars: WeekBars,
     )
 
     private val nl = Locale("nl", "NL")
     private val timeFmt = SimpleDateFormat("HH:mm", nl)
     private val dateFmt = SimpleDateFormat("EEEE d MMMM", nl)
+    private val monthFmt = SimpleDateFormat("MMMM", nl)
 
     private lateinit var root: FrameLayout
     private lateinit var left: View
     private lateinit var list: LinearLayout
+    private lateinit var periodBar: LinearLayout
     private lateinit var overlay: FrameLayout
     private lateinit var panelTitle: TextView
     private lateinit var panelBody: LinearLayout
     private lateinit var panelScroll: ScrollView
 
     private val rows = mutableListOf<Row>()
+    private val periodButtons = mutableListOf<TextView>()
+    private var period = Period.WEEK
     private var current = 0
     private var stats: Map<String, AppStats> = emptyMap()
     private var hasUsage = false
@@ -121,6 +137,7 @@ class MainActivity : Activity() {
         root = findViewById(R.id.root)
         left = findViewById(R.id.left)
         list = findViewById(R.id.list)
+        periodBar = findViewById(R.id.period)
         overlay = findViewById(R.id.overlay)
         panelTitle = findViewById(R.id.panelTitle)
         panelBody = findViewById(R.id.panelBody)
@@ -131,16 +148,16 @@ class MainActivity : Activity() {
         val btnSettings = findViewById<ImageButton>(R.id.btnSettings)
         val btnInputs = findViewById<ImageButton>(R.id.btnInputs)
         val btnApps = findViewById<ImageButton>(R.id.btnApps)
-        listOf(btnSettings, btnInputs, btnApps).forEach { it.isFocusableInTouchMode = true }
+        listOf(btnSettings, btnInputs, btnApps).forEach { b ->
+            b.isFocusableInTouchMode = true
+            if (Build.VERSION.SDK_INT >= 26) b.defaultFocusHighlightEnabled = false
+            b.setOnKeyListener(toListOnRight)
+        }
         btnSettings.setOnClickListener { startSafely(Intent(Settings.ACTION_SETTINGS), "Instellingen") }
         btnInputs.setOnClickListener { showInputs() }
         btnApps.setOnClickListener { showAllApps() }
-        btnApps.setOnKeyListener { _, code, ev ->
-            if (code == KeyEvent.KEYCODE_DPAD_RIGHT && ev.action == KeyEvent.ACTION_DOWN) {
-                rows.getOrNull(current)?.view?.requestFocus(); true
-            } else false
-        }
 
+        buildPeriodSwitch()
         buildList()
         updateClock()
         register(tickReceiver, IntentFilter(Intent.ACTION_TIME_TICK).apply {
@@ -198,6 +215,15 @@ class MainActivity : Activity() {
         return super.dispatchKeyEvent(event)
     }
 
+    /** From anything on the left, RIGHT goes back to the selected app. */
+    private val toListOnRight = View.OnKeyListener { v, code, ev ->
+        if (code == KeyEvent.KEYCODE_DPAD_RIGHT && ev.action == KeyEvent.ACTION_DOWN &&
+            v.focusSearch(View.FOCUS_RIGHT)?.let { it.parent == v.parent } != true
+        ) {
+            rows.getOrNull(current)?.view?.requestFocus(); true
+        } else false
+    }
+
     private fun register(r: BroadcastReceiver, f: IntentFilter) {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(r, f, Context.RECEIVER_EXPORTED)
         else registerReceiver(r, f)
@@ -205,13 +231,60 @@ class MainActivity : Activity() {
 
     private fun isScreenOn() = (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
 
-    // ------------------------------------------------------------------ clock & stats
+    // ------------------------------------------------------------------ clock & period
 
     private fun updateClock() {
         val now = Date()
         findViewById<TextView>(R.id.clock).text = timeFmt.format(now)
         findViewById<TextView>(R.id.date).text = dateFmt.format(now)
     }
+
+    /** Week / Maand / Jaar: moving onto an option selects it, like tabs. */
+    private fun buildPeriodSwitch() {
+        periodBar.removeAllViews()
+        periodButtons.clear()
+        Period.values().forEach { p ->
+            val b = TextView(this).apply {
+                text = p.button
+                gravity = Gravity.CENTER
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+                setPadding(dp(12), 0, dp(12), 0)
+                isFocusable = true
+                isFocusableInTouchMode = true
+                isClickable = true
+                if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
+                setOnFocusChangeListener { _, has -> if (has) setPeriod(p); stylePeriodButtons() }
+                setOnClickListener { setPeriod(p) }
+                setOnKeyListener(toListOnRight)
+            }
+            periodButtons += b
+            periodBar.addView(b, LinearLayout.LayoutParams(-2, dp(24)).apply { if (p != Period.YEAR) marginEnd = dp(3) })
+        }
+        stylePeriodButtons()
+    }
+
+    private fun setPeriod(p: Period) {
+        if (period == p) return
+        period = p
+        stylePeriodButtons()
+        showStats(stats, hasUsage)
+    }
+
+    private fun stylePeriodButtons() {
+        periodButtons.forEachIndexed { i, b ->
+            val selected = Period.values()[i] == period
+            val focused = b.isFocused
+            b.background = GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(if (selected) Color.WHITE else Color.TRANSPARENT)
+                if (focused && !selected) setStroke(dp(1), Color.WHITE)
+            }
+            b.setTextColor(if (selected) Color.BLACK else 0xFFB5B5B5.toInt())
+            b.typeface = Typeface.create(if (selected) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
+        }
+    }
+
+    // ------------------------------------------------------------------ stats
 
     private fun loadStats() {
         if (demo) { showStats(demoStats(), true); return }
@@ -223,37 +296,63 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun valueFor(st: AppStats?): Long = when (period) {
+        Period.WEEK -> st?.week
+        Period.MONTH -> st?.month
+        Period.YEAR -> st?.year
+    } ?: 0L
+
     private fun showStats(s: Map<String, AppStats>, ok: Boolean) {
         stats = s
         hasUsage = ok
-        val weeks = Config.apps.map { s[it.name]?.week ?: 0L }
-        val total = weeks.sum()
-        findViewById<TextView>(R.id.weekTotal).text = if (ok) UsageRepo.format(total) else "–"
-        findViewById<SegmentBar>(R.id.segments).setValues(if (ok) weeks else emptyList())
-        val daysSoFar = java.util.Calendar.getInstance().let { (it.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7 + 1 }
+        val values = Config.apps.map { valueFor(s[it.name]) }
+        val total = values.sum()
+        findViewById<TextView>(R.id.totalLabel).text = period.label
+        findViewById<TextView>(R.id.total).text = if (ok) UsageRepo.format(total) else "–"
+        findViewById<SegmentBar>(R.id.segments).setValues(
+            if (ok) Config.apps.mapIndexed { i, a -> values[i] to Color.parseColor(a.color) } else emptyList(),
+        )
         findViewById<TextView>(R.id.perDay).text =
-            if (ok) "≈ ${UsageRepo.format(total / daysSoFar)} per dag" else "Kijktijd nog niet beschikbaar"
+            if (ok) "≈ ${UsageRepo.format(total / daysInPeriod())} per dag" else "Kijktijd nog niet beschikbaar"
         rows.forEach { fillRow(it) }
+    }
+
+    /** Days so far in the selected period, today included. */
+    private fun daysInPeriod(): Int {
+        val c = Calendar.getInstance()
+        return when (period) {
+            Period.WEEK -> (c.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1
+            Period.MONTH -> c.get(Calendar.DAY_OF_MONTH)
+            Period.YEAR -> c.get(Calendar.DAY_OF_YEAR)
+        }
     }
 
     private fun fillRow(r: Row) {
         val st = stats[r.spec.name]
-        r.time.text = if (hasUsage && st != null) UsageRepo.format(st.week) else ""
-        r.week.text = st?.let { UsageRepo.format(it.week) } ?: "–"
+        val v = valueFor(st)
+        val total = Config.apps.sumOf { valueFor(stats[it.name]) }
+        val max = Config.apps.maxOf { valueFor(stats[it.name]) }.coerceAtLeast(1L)
+        val now = Date()
+        r.time.text = if (r.app == null && !demo) "niet op de tv" else if (hasUsage) UsageRepo.format(v) else ""
+        r.share.setValue(if (hasUsage) v.toFloat() / max else 0f, r.color)
+        r.pct.text = if (hasUsage && total > 0) "${(v * 100 / total)}%" else "–"
+        r.monthLabel.text = monthFmt.format(now).uppercase(nl)
         r.month.text = st?.let { UsageRepo.format(it.month) } ?: "–"
+        r.yearLabel.text = Calendar.getInstance().get(Calendar.YEAR).toString()
         r.year.text = st?.let { UsageRepo.format(it.year) } ?: "–"
-        if (r.view.hasFocus() || rows.indexOf(r) == current) r.bars.setValues(st?.last7 ?: LongArray(7))
+        if (rows.indexOf(r) == current) r.bars.setValues(st?.weekDays ?: LongArray(7) { -1L }, r.color)
     }
 
     private fun demoStats(): Map<String, AppStats> {
         val m = 60_000L
-        fun s(w: Long, mo: Long, y: Long, vararg d: Long) = AppStats(w * m, mo * m, y * m, d.map { it * m }.toLongArray())
+        fun s(w: Long, mo: Long, y: Long, vararg d: Long) =
+            AppStats(w * m, mo * m, y * m, (d.map { it * m } + listOf(-1L)).toLongArray())
         return mapOf(
-            "YouTube" to s(370, 1290, 8880, 35, 50, 25, 70, 75, 95, 60),
-            "Netflix" to s(205, 810, 5400, 40, 0, 65, 30, 0, 70, 0),
-            "NOS" to s(65, 300, 2100, 10, 12, 8, 10, 15, 10, 0),
-            "NPO Start" to s(50, 140, 900, 0, 20, 0, 0, 30, 0, 0),
-            "Prime Video" to s(70, 200, 1300, 0, 0, 0, 70, 0, 0, 0),
+            "YouTube" to s(370, 440, 8040, 45, 68, 31, 91, 105, 128),
+            "Netflix" to s(205, 260, 5400, 40, 0, 65, 30, 0, 70),
+            "NOS" to s(65, 80, 2100, 10, 12, 8, 10, 15, 10),
+            "NPO Start" to s(50, 60, 900, 0, 20, 0, 0, 30, 0),
+            "Prime Video" to s(70, 85, 1300, 0, 0, 0, 70, 0, 0),
         )
     }
 
@@ -278,21 +377,33 @@ class MainActivity : Activity() {
             val r = rowView(spec, app)
             rows += r
             list.addView(r.view)
-            r.view.setOnFocusChangeListener { _, has -> setExpanded(r, has); if (has) { current = i } }
+            r.view.setOnFocusChangeListener { _, has -> if (has) current = i; setExpanded(r, has) }
             r.view.setOnClickListener { open(r) }
-            r.view.nextFocusLeftId = R.id.btnApps
+            r.view.setOnKeyListener { _, code, ev ->
+                if (code == KeyEvent.KEYCODE_DPAD_LEFT && ev.action == KeyEvent.ACTION_DOWN) {
+                    periodButtons.getOrNull(period.ordinal)?.requestFocus(); true
+                } else false
+            }
             if (i == 0 && Build.VERSION.SDK_INT >= 26) r.view.isFocusedByDefault = true
             fillRow(r)
         }
         current = current.coerceIn(0, (rows.size - 1).coerceAtLeast(0))
     }
 
+    private fun label(text: String) = TextView(this).apply {
+        this.text = text
+        setTextColor(0xFF9A9A9A.toInt())
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
+        letterSpacing = 0.12f
+    }
+
     private fun rowView(spec: AppSpec, app: Installed?): Row {
-        val bg = GradientDrawable().apply { setColor(0xFF161616.toInt()); cornerRadius = dp(14).toFloat(); alpha = 0 }
+        val color = Color.parseColor(spec.color)
+        val bg = GradientDrawable().apply { setColor(0xFF141414.toInt()); cornerRadius = dp(14).toFloat(); alpha = 0 }
         val view = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = bg
-            setPadding(dp(22), dp(10), dp(22), dp(10))
+            setPadding(dp(22), dp(9), dp(22), dp(9))
             isFocusable = true
             isFocusableInTouchMode = true
             isClickable = true
@@ -301,66 +412,63 @@ class MainActivity : Activity() {
             layoutTransition = LayoutTransition().apply { enableTransitionType(LayoutTransition.CHANGING) }
         }
 
+        // Header: icon, name, (share line | dot), time
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val icon = ImageView(this).apply {
-            setImageResource(spec.icon)
-            imageTintList = ColorStateList.valueOf(DIM)
-        }
+        val icon = ImageView(this).apply { setImageResource(spec.icon); imageTintList = ColorStateList.valueOf(DIM) }
         val name = TextView(this).apply {
             text = spec.name
             setTextColor(DIM)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NAME_SMALL)
-            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            letterSpacing = -0.02f
             includeFontPadding = false
+        }
+        val share = ShareLine(this)
+        val dot = View(this).apply {
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(color) }
+            visibility = View.GONE
         }
         val time = TextView(this).apply {
             setTextColor(DIM)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+            gravity = Gravity.END
         }
-        header.addView(icon, LinearLayout.LayoutParams(dp(18), dp(18)))
-        header.addView(name, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(16) })
-        header.addView(time)
-        view.addView(header, LinearLayout.LayoutParams(-1, dp(40)))
+        header.addView(icon, LinearLayout.LayoutParams(dp(20), dp(20)))
+        header.addView(name, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(14) })
+        header.addView(share, LinearLayout.LayoutParams(dp(100), dp(3)).apply { marginEnd = dp(14) })
+        header.addView(dot, LinearLayout.LayoutParams(dp(7), dp(7)).apply { marginEnd = dp(7) })
+        header.addView(time, LinearLayout.LayoutParams(-2, -2).apply { })
+        view.addView(header, LinearLayout.LayoutParams(-1, -2))
 
-        val detail = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.BOTTOM
-            visibility = View.GONE
-        }
-        fun stat(label: String): TextView {
+        // Detail (selected only): share %, this month, this year, this week per day
+        val detail = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM; visibility = View.GONE }
+        fun stat(lbl: String): Pair<TextView, TextView> {
             val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            col.addView(TextView(this).apply {
-                text = label
-                setTextColor(getColor(R.color.label))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
-                letterSpacing = 0.1f
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            })
-            val v = TextView(this).apply {
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            }
-            col.addView(v)
-            detail.addView(col, LinearLayout.LayoutParams(dp(96), -2))
-            return v
+            val l = label(lbl)
+            val v = TextView(this).apply { setTextColor(Color.WHITE); setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f) }
+            col.addView(l)
+            col.addView(v, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(3) })
+            detail.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(20) })
+            return l to v
         }
-        val week = stat("WEEK")
-        val month = stat("MAAND")
-        val year = stat("JAAR")
-        detail.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        val bars = MiniBars(this)
-        detail.addView(bars, LinearLayout.LayoutParams(dp(84), dp(30)))
-        view.addView(detail, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6); bottomMargin = dp(8) })
+        val (_, pct) = stat("AANDEEL")
+        val (monthLabel, month) = stat("MAAND")
+        val (yearLabel, year) = stat("JAAR")
+        val bars = WeekBars(this)
+        detail.addView(bars, LinearLayout.LayoutParams(0, dp(48), 1.8f))
+        view.addView(detail, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16); bottomMargin = dp(4) })
 
-        view.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(2) }
-        return Row(spec, app, view, bg, icon, name, time, detail, week, month, year, bars)
+        view.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) }
+        return Row(spec, color, app, view, bg, icon, name, dot, time, share, detail, pct, monthLabel, month, yearLabel, year, bars)
     }
 
-    /** The selected app opens into a card with week / month / year and the last 7 days. */
+    /** The selected app opens into a card; the rest stay a quiet list. */
     private fun setExpanded(r: Row, on: Boolean) {
         r.detail.visibility = if (on) View.VISIBLE else View.GONE
-        val from = r.bg.alpha
-        ValueAnimator.ofInt(from, if (on) 255 else 0).apply {
+        r.share.visibility = if (on) View.GONE else View.VISIBLE
+        r.dot.visibility = if (on) View.VISIBLE else View.GONE
+        r.view.setPadding(dp(22), dp(if (on) 18 else 9), dp(22), dp(if (on) 18 else 9))
+        ValueAnimator.ofInt(r.bg.alpha, if (on) 255 else 0).apply {
             duration = 220
             addUpdateListener { r.bg.alpha = it.animatedValue as Int }
             start()
@@ -381,16 +489,13 @@ class MainActivity : Activity() {
             }
             start()
         }
-        r.name.typeface = Typeface.create(if (on) "sans-serif-medium" else "sans-serif-light", Typeface.NORMAL)
+        r.name.typeface = Typeface.create(if (on) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
+        r.name.letterSpacing = if (on) -0.03f else -0.02f
         r.time.setTextColor(if (on) Color.WHITE else DIM)
-        r.time.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (on) 17f else 13f)
-        (r.icon.layoutParams as LinearLayout.LayoutParams).apply {
-            width = dp(if (on) 22 else 18); height = width
-        }
+        r.time.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (on) 20f else 16f)
+        (r.icon.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (on) 26 else 20); height = width }
         r.icon.requestLayout()
-        if (on) r.bars.setValues(stats[r.spec.name]?.last7 ?: LongArray(7))
-        if (r.app == null && on && !demo) r.time.text = "niet op de tv"
-        else if (!on) fillRow(r)
+        if (on) r.bars.setValues(stats[r.spec.name]?.weekDays ?: LongArray(7) { -1L }, r.color)
     }
 
     // ------------------------------------------------------------------ opening apps
@@ -522,6 +627,7 @@ class MainActivity : Activity() {
                 isFocusable = true
                 isFocusableInTouchMode = true
                 isClickable = true
+                if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
                 setOnClickListener { action() }
             }, LinearLayout.LayoutParams(dp(320), ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
         }
@@ -586,8 +692,8 @@ class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "BankLaunch"
-        private val DIM = Color.parseColor("#8C8C8C")
-        private const val NAME_SMALL = 22f
-        private const val NAME_BIG = 30f
+        private val DIM = Color.parseColor("#8A8A8A")
+        private const val NAME_SMALL = 28f
+        private const val NAME_BIG = 40f
     }
 }

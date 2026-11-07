@@ -6,41 +6,44 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 
-/** Thin bar split into one segment per app, biggest first; the first is white, the rest step down in grey. */
+private fun View.grow(ms: Long, update: (Float) -> Unit) =
+    ValueAnimator.ofFloat(0f, 1f).apply {
+        duration = ms; interpolator = DecelerateInterpolator(2f)
+        addUpdateListener { update(it.animatedValue as Float); invalidate() }
+        start()
+    }
+
+/** One bar split into a coloured segment per app, in app order, sized by watch time. */
 class SegmentBar @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val shades = intArrayOf(Color.WHITE, 0xFF8A8A8A.toInt(), 0xFF5E5E5E.toInt(), 0xFF454545.toInt(), 0xFF363636.toInt())
-    private var parts = floatArrayOf()
+    private var parts = listOf<Pair<Float, Int>>()
     private var progress = 1f
     private val r = RectF()
 
-    fun setValues(values: List<Long>) {
-        val total = values.sum().toFloat()
-        parts = if (total <= 0f) floatArrayOf() else values.sortedDescending().map { it / total }.toFloatArray()
-        ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 900; interpolator = DecelerateInterpolator(2f)
-            addUpdateListener { progress = it.animatedValue as Float; invalidate() }
-            start()
-        }
+    fun setValues(values: List<Pair<Long, Int>>) {
+        val total = values.sumOf { it.first }.toFloat()
+        parts = if (total <= 0f) emptyList() else values.filter { it.first > 0 }.map { it.first / total to it.second }
+        grow(900) { progress = it }
     }
 
     override fun onDraw(c: Canvas) {
-        val gap = resources.displayMetrics.density * 3
-        val usable = (width - gap * (parts.size - 1).coerceAtLeast(0)) * progress
-        var x = 0f
-        val rad = height / 2f
+        val d = resources.displayMetrics.density
+        val gap = 2 * d
+        val rad = 1.5f * d
         if (parts.isEmpty()) {
-            paint.color = 0xFF262626.toInt(); r.set(0f, 0f, width.toFloat(), height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
+            paint.color = 0xFF1A1A1A.toInt(); r.set(0f, 0f, width.toFloat(), height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
             return
         }
-        parts.forEachIndexed { i, p ->
+        val usable = (width - gap * (parts.size - 1)) * progress
+        var x = 0f
+        parts.forEach { (p, color) ->
             val w = usable * p
-            if (w < 1f) return@forEachIndexed
-            paint.color = shades[i.coerceAtMost(shades.size - 1)]
+            paint.color = color
             r.set(x, 0f, x + w, height.toFloat())
             c.drawRoundRect(r, rad, rad, paint)
             x += w + gap
@@ -48,36 +51,70 @@ class SegmentBar @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = 
     }
 }
 
-/** Seven small bars, one per day; today (the last) is white. */
-class MiniBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
+/** This week Monday..Sunday with day labels; today in the app colour, other days dimmed, future days empty. */
+class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var values = LongArray(7)
+    private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+    }
+    private val days = arrayOf("ma", "di", "wo", "do", "vr", "za", "zo")
+    private var values = LongArray(7) { -1L }
+    private var color = Color.WHITE
     private var progress = 1f
     private val r = RectF()
 
-    fun setValues(v: LongArray) {
+    fun setValues(v: LongArray, appColor: Int) {
         values = v
-        ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 600; interpolator = DecelerateInterpolator(2f)
-            addUpdateListener { progress = it.animatedValue as Float; invalidate() }
-            start()
-        }
+        color = appColor
+        grow(600) { progress = it }
     }
 
     override fun onDraw(c: Canvas) {
-        val n = values.size
-        if (n == 0) return
         val d = resources.displayMetrics.density
+        text.textSize = 8 * resources.displayMetrics.scaledDensity
+        val labelH = 13 * d
+        val barMax = height - labelH
         val gap = 5 * d
-        val bw = (width - gap * (n - 1)) / n
-        val max = (values.maxOrNull() ?: 0L).coerceAtLeast(1L).toFloat()
-        val minH = 3 * d
-        values.forEachIndexed { i, v ->
-            val h = (minH + (height - minH) * (v / max)) * progress
+        val bw = (width - gap * 6) / 7
+        val max = values.maxOrNull()?.coerceAtLeast(1L)?.toFloat() ?: 1f
+        val today = values.indexOfLast { it >= 0 }
+        val dim = Color.rgb(
+            (Color.red(color) * 0.36f).toInt(), (Color.green(color) * 0.36f).toInt(), (Color.blue(color) * 0.36f).toInt(),
+        )
+        for (i in 0 until 7) {
+            val v = values[i]
             val x = i * (bw + gap)
-            paint.color = if (i == n - 1) Color.WHITE else 0xFF4A4A4A.toInt()
-            r.set(x, height - h.coerceAtLeast(minH * progress), x + bw, height.toFloat())
-            c.drawRoundRect(r, 1.5f * d, 1.5f * d, paint)
+            val h = if (v < 0) 1.5f * d else ((2 * d) + (barMax - 2 * d) * (v / max)) * progress
+            paint.color = when { v < 0 -> 0xFF2A2A2A.toInt(); i == today -> color; else -> dim }
+            r.set(x, barMax - h, x + bw, barMax)
+            c.drawRoundRect(r, 2 * d, 2 * d, paint)
+            text.color = if (i == today) Color.WHITE else 0xFF9A9A9A.toInt()
+            c.drawText(days[i], x + bw / 2, height - 2 * d, text)
         }
+    }
+}
+
+/** Thin track with a coloured fill: this app's time relative to the most-watched app. */
+class ShareLine @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var fraction = 0f
+    private var color = Color.WHITE
+    private var progress = 1f
+    private val r = RectF()
+
+    fun setValue(f: Float, appColor: Int) {
+        fraction = f.coerceIn(0f, 1f)
+        color = appColor
+        grow(700) { progress = it }
+    }
+
+    override fun onDraw(c: Canvas) {
+        val rad = height / 2f
+        paint.color = 0xFF1A1A1A.toInt()
+        r.set(0f, 0f, width.toFloat(), height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
+        if (fraction <= 0f) return
+        paint.color = color
+        r.set(0f, 0f, width * fraction * progress, height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
     }
 }

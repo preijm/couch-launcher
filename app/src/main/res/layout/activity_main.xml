@@ -7,21 +7,21 @@
     android:background="@color/base"
     android:clipChildren="false">
 
-    <!-- Left: time, this week's total, buttons -->
+    <!-- Left: time, period switch, total, buttons. 1920x1080 design / 2 = dp. -->
     <LinearLayout
         android:id="@+id/left"
-        android:layout_width="300dp"
+        android:layout_width="280dp"
         android:layout_height="match_parent"
         android:layout_marginStart="64dp"
-        android:layout_marginTop="50dp"
-        android:layout_marginBottom="44dp"
+        android:layout_marginTop="48dp"
+        android:layout_marginBottom="40dp"
         android:orientation="vertical">
 
         <TextView
             android:id="@+id/clock"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:fontFamily="sans-serif-light"
+            android:fontFamily="sans-serif-thin"
             android:includeFontPadding="false"
             android:letterSpacing="-0.02"
             android:textColor="@color/ink"
@@ -31,64 +31,72 @@
             android:id="@+id/date"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="3dp"
-            android:layout_marginTop="2dp"
-            android:textColor="@color/ink_soft"
-            android:textSize="14sp" />
+            android:layout_marginStart="4dp"
+            android:layout_marginTop="8dp"
+            android:textColor="#9A9A9A"
+            android:textSize="15sp" />
 
         <Space
             android:layout_width="1dp"
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <TextView
+        <LinearLayout
+            android:id="@+id/period"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="2dp"
-            android:fontFamily="sans-serif-medium"
-            android:letterSpacing="0.12"
-            android:text="DEZE WEEK OP TV"
-            android:textColor="@color/ink_soft"
-            android:textSize="10sp" />
+            android:background="@drawable/period_bg"
+            android:orientation="horizontal"
+            android:padding="3dp" />
 
         <TextView
-            android:id="@+id/weekTotal"
+            android:id="@+id/totalLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.14"
+            android:textColor="#9A9A9A"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/total"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
             android:fontFamily="sans-serif-light"
             android:includeFontPadding="false"
-            android:letterSpacing="-0.02"
+            android:letterSpacing="-0.03"
             android:text="–"
             android:textColor="@color/ink"
-            android:textSize="46sp" />
+            android:textSize="48sp" />
 
         <nl.reijm.banklaunchtv.SegmentBar
             android:id="@+id/segments"
-            android:layout_width="250dp"
-            android:layout_height="3dp"
+            android:layout_width="match_parent"
+            android:layout_height="5dp"
             android:layout_marginTop="12dp" />
 
         <TextView
             android:id="@+id/perDay"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="2dp"
             android:layout_marginTop="10dp"
-            android:textColor="@color/ink_soft"
+            android:textColor="#9A9A9A"
             android:textSize="11sp" />
 
         <LinearLayout
             android:id="@+id/buttons"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="30dp"
+            android:layout_marginTop="32dp"
             android:orientation="horizontal">
 
             <ImageButton
                 android:id="@+id/btnSettings"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:layout_marginEnd="10dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
                 android:background="@drawable/round_btn_bg"
                 android:contentDescription="Instellingen van de tv"
                 android:padding="9dp"
@@ -98,11 +106,11 @@
 
             <ImageButton
                 android:id="@+id/btnInputs"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:layout_marginEnd="10dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="8dp"
                 android:background="@drawable/round_btn_bg"
-                android:contentDescription="Ingangen"
+                android:contentDescription="Ingang wisselen"
                 android:padding="9dp"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_tv"
@@ -110,8 +118,8 @@
 
             <ImageButton
                 android:id="@+id/btnApps"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:background="@drawable/round_btn_bg"
                 android:contentDescription="Alle apps"
                 android:padding="10dp"
@@ -124,10 +132,11 @@
     <!-- Right: the apps -->
     <LinearLayout
         android:id="@+id/list"
-        android:layout_width="460dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="end|center_vertical"
-        android:layout_marginEnd="56dp"
+        android:layout_gravity="center_vertical"
+        android:layout_marginStart="404dp"
+        android:layout_marginEnd="64dp"
         android:animateLayoutChanges="true"
         android:orientation="vertical" />
 
