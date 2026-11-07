@@ -1,17 +1,7 @@
-# Tegel
+# Bank Launcher TV
 
-A custom tile home screen for an LG webOS TV (`nl.reijm.tegel`). It shows app tiles, HDMI inputs, a clock and a custom background. The app runs on a TV in Developer Mode, so no root is needed.
+My own home screen (launcher) for my Sony TV: big tiles for my apps and the HDMI inputs, plus a clock and a custom background. I use it from the couch (de bank).
 
-- Configure tiles and the background in `app/js/config.js`.
-- Find real app IDs with `npm run apps`.
-
-## Commands
-| | |
-|---|---|
-| `npm run serve` | preview in a desktop browser (launches are mocked) |
-| `npm run deploy` | package + install + launch on the TV |
-| `npm run inspect` | remote DevTools for the app on the TV |
-| `npm run info` | TV / webOS info |
-
-One-time setup is `npm i -g @webos-tools/cli`, then register the TV as device `tv`:
-`ares-setup-device --add tv -i "{'host':'<IP>','port':'9922','username':'prisoner'}"` then `ares-novacom --device tv --getkey`.
+## Status
+- **Next:** a native Android TV launcher app. It installs over the network with adb and replaces the stock home screen. The TV doesn't need to be rooted.
+- `app/` still holds the first prototype, which was built for LG webOS before it turned out the TV is a Sony. Its layout and tile config will be reused, and the folder will be removed once the Android version replaces it.
