@@ -338,7 +338,21 @@ class MainActivity : Activity() {
         )
         findViewById<TextView>(R.id.perDay).text =
             if (ok) "≈ ${UsageRepo.format(total / daysInPeriod())} per day" else "Watch time not available yet"
+        showToday(s, ok)
         rows.forEach { fillRow(it) }
+    }
+
+    /** "Today 3h 10m", only once there's something worth mentioning (5 minutes or more). */
+    private fun showToday(s: Map<String, AppStats>, ok: Boolean) {
+        val idx = (Calendar.getInstance().get(Calendar.DAY_OF_WEEK) + 5) % 7 // Monday = 0
+        val today = Config.apps.sumOf { s[it.name]?.weekDays?.getOrNull(idx)?.coerceAtLeast(0L) ?: 0L }
+        val v = findViewById<TextView>(R.id.today)
+        if (ok && today >= 5 * 60_000L) {
+            v.text = "Today  ${UsageRepo.format(today)}"
+            v.visibility = View.VISIBLE
+        } else {
+            v.visibility = View.GONE
+        }
     }
 
     /** Days so far in the selected period, today included. */

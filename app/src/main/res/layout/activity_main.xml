@@ -85,6 +85,16 @@
             android:textColor="#9A9A9A"
             android:textSize="11sp" />
 
+        <!-- Only shown once something was watched today (e.g. second time the TV goes on). -->
+        <TextView
+            android:id="@+id/today"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#E6E6E6"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/buttons"
             android:layout_width="wrap_content"
