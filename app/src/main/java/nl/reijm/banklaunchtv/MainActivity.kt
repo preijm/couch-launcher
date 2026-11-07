@@ -504,6 +504,7 @@ class MainActivity : Activity() {
         r.name.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (on) NAME_BIG else NAME_SMALL)
         val t0 = r.time.textSize
         r.time.setTextSize(TypedValue.COMPLEX_UNIT_SP, if (on) 20f else 16f)
+        r.time.minWidth = if (on) 0 else dp(96) // fixed width only matters for lining up the bars
         val i0 = r.icon.layoutParams.width.toFloat()
         (r.icon.layoutParams as LinearLayout.LayoutParams).apply { width = dp(if (on) 26 else 20); height = width }
         r.icon.requestLayout()

@@ -49,6 +49,8 @@ class UsageRepo(private val ctx: Context) {
     }
 
     fun load(specs: List<AppSpec>): Map<String, AppStats> {
+        // Saved days from an older (wrong) way of counting are thrown away and recounted.
+        if (prefs.getInt("format", 1) != FORMAT) prefs.edit().clear().putInt("format", FORMAT).apply()
         val now = System.currentTimeMillis()
         val today = dayStart(now)
 
@@ -112,39 +114,55 @@ class UsageRepo(private val ctx: Context) {
         return computed
     }
 
-    /** Null when Android has no events at all for that range (too old): don't cache zeros then. */
+    /**
+     * Null when Android has no events at all for that range (too old): don't cache zeros then.
+     *
+     * An app counts as in front while any of its screens (activities) is resumed. Apps like
+     * YouTube run more than one screen, so a single screen pausing doesn't stop the clock.
+     */
     private fun fromEvents(start: Long, end: Long): Map<String, Long>? {
         val events = usm.queryEvents(start, end) ?: return null
         val e = UsageEvents.Event()
-        val open = HashMap<String, Long>()
-        val seen = HashSet<String>()
+        val resumed = HashMap<String, HashSet<String>>()   // package -> its resumed screens
+        val since = HashMap<String, Long>()                 // package -> in front since
+        val seen = HashSet<String>()                        // "pkg/class" seen today
         val total = HashMap<String, Long>()
         var any = false
 
-        fun close(pkg: String, at: Long) {
-            val since = open.remove(pkg) ?: return
-            if (at > since) total[pkg] = (total[pkg] ?: 0L) + (at - since)
+        fun stop(pkg: String, at: Long) {
+            val from = since.remove(pkg) ?: return
+            if (at > from) total[pkg] = (total[pkg] ?: 0L) + (at - from)
         }
 
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
             any = true
             val pkg = e.packageName ?: continue
+            val screen = pkg + "/" + (e.className ?: "")
             when (e.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    seen += pkg
-                    if (pkg !in open) open[pkg] = e.timeStamp
+                    seen += screen
+                    val set = resumed.getOrPut(pkg) { HashSet() }
+                    if (set.isEmpty() && pkg !in since) since[pkg] = e.timeStamp
+                    set += screen
                 }
                 UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED -> {
                     // Paused without a resume today: it was already open at midnight.
-                    if (pkg !in seen) { seen += pkg; open[pkg] = start }
-                    close(pkg, e.timeStamp)
+                    if (screen !in seen) {
+                        seen += screen
+                        if (e.eventType == UsageEvents.Event.ACTIVITY_PAUSED && pkg !in since) since[pkg] = start
+                    }
+                    val set = resumed[pkg]
+                    set?.remove(screen)
+                    if (set.isNullOrEmpty()) stop(pkg, e.timeStamp)
                 }
-                UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.DEVICE_SHUTDOWN ->
-                    open.keys.toList().forEach { close(it, e.timeStamp) }
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.DEVICE_SHUTDOWN -> {
+                    since.keys.toList().forEach { stop(it, e.timeStamp) }
+                    resumed.clear()
+                }
             }
         }
-        open.keys.toList().forEach { close(it, end) }
+        since.keys.toList().forEach { stop(it, end) }
         return if (any) total else null
     }
 
@@ -196,6 +214,8 @@ class UsageRepo(private val ctx: Context) {
 
     companion object {
         private const val HOUR = 3_600_000L
+        /** Raise when the way days are counted changes, so saved days are recounted. */
+        private const val FORMAT = 2
 
         /** "6h 10m", "0h 50m"; from 10 hours on, whole hours only: 43h 35m shows as "44h". */
         fun format(ms: Long): String {
