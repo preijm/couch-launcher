@@ -1,80 +1,148 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 1080p TV = 960x540dp. 48dp/27dp outer padding keeps content inside the overscan-safe area. -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/scroll"
+<!-- 1080p TV = 960x540dp. 64dp/44dp margins keep everything inside the overscan-safe area. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true"
-    android:scrollbars="none"
-    android:clipChildren="false"
-    android:descendantFocusability="afterDescendants">
+    android:clipChildren="false">
+
+    <nl.reijm.banklaunchtv.GlowView
+        android:id="@+id/glow"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
 
     <LinearLayout
-        android:layout_width="match_parent"
+        android:id="@+id/clockBlock"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:layout_marginStart="64dp"
+        android:layout_marginTop="44dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/greeting"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:fontFamily="sans-serif-light"
+            android:textColor="@color/ink_soft"
+            android:textSize="22sp" />
+
+        <TextView
+            android:id="@+id/clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="-6dp"
+            android:fontFamily="sans-serif-thin"
+            android:includeFontPadding="false"
+            android:letterSpacing="-0.02"
+            android:textColor="@color/ink"
+            android:textSize="132sp" />
+
+        <TextView
+            android:id="@+id/date"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_marginTop="-14dp"
+            android:fontFamily="sans-serif"
+            android:textColor="@color/ink_soft"
+            android:textSize="20sp" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/gear"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="44dp"
+        android:layout_marginEnd="64dp"
+        android:background="@drawable/gear_bg"
+        android:contentDescription="Instellingen en meer"
+        android:focusable="true"
+        android:padding="12dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_gear" />
+
+    <LinearLayout
+        android:id="@+id/row"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="64dp"
+        android:layout_marginBottom="118dp"
         android:clipChildren="false"
         android:clipToPadding="false"
-        android:paddingStart="48dp"
-        android:paddingEnd="48dp"
-        android:paddingTop="27dp"
-        android:paddingBottom="40dp">
+        android:orientation="horizontal" />
 
-        <RelativeLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="18dp">
+    <TextView
+        android:id="@+id/appName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="66dp"
+        android:layout_marginBottom="52dp"
+        android:fontFamily="sans-serif-medium"
+        android:textColor="@color/ink"
+        android:textSize="28sp" />
 
-            <TextView
-                android:id="@+id/brand"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_alignParentStart="true"
-                android:layout_marginTop="8dp"
-                android:text="BANK LAUNCH TV"
-                android:textColor="#E8A33D"
-                android:textSize="15sp"
-                android:letterSpacing="0.2"
-                android:fontFamily="sans-serif-medium" />
+    <TextView
+        android:id="@+id/mark"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_marginEnd="64dp"
+        android:layout_marginBottom="58dp"
+        android:fontFamily="sans-serif-light"
+        android:letterSpacing="0.04"
+        android:text="bank launch tv"
+        android:textColor="@color/ink_faint"
+        android:textSize="15sp" />
 
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_alignParentEnd="true"
-                android:gravity="end"
-                android:orientation="vertical">
-
-                <TextClock
-                    android:id="@+id/clock"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:format12Hour="HH:mm"
-                    android:format24Hour="HH:mm"
-                    android:includeFontPadding="false"
-                    android:textColor="#F2EDE4"
-                    android:textSize="76sp"
-                    android:fontFamily="sans-serif-light"
-                    android:shadowColor="#73000000"
-                    android:shadowDy="2"
-                    android:shadowRadius="12" />
-
-                <TextClock
-                    android:id="@+id/date"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:format12Hour="EEEE d MMMM"
-                    android:format24Hour="EEEE d MMMM"
-                    android:textColor="#BFF2EDE4"
-                    android:textSize="17sp" />
-            </LinearLayout>
-        </RelativeLayout>
+    <!-- Settings & more: dims the home screen and shows a panel. -->
+    <FrameLayout
+        android:id="@+id/overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#B3070B18"
+        android:visibility="gone">
 
         <LinearLayout
-            android:id="@+id/rows"
-            android:clipChildren="false"
-            android:clipToPadding="false"
-            android:layout_width="match_parent"
+            android:id="@+id/panel"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical" />
-    </LinearLayout>
-</ScrollView>
+            android:layout_gravity="center"
+            android:background="@drawable/panel_bg"
+            android:minWidth="360dp"
+            android:orientation="vertical"
+            android:padding="28dp">
+
+            <TextView
+                android:id="@+id/panelTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="18dp"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/ink"
+                android:textSize="24sp" />
+
+            <ScrollView
+                android:id="@+id/panelScroll"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/panelBody"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
+                    android:orientation="vertical"
+                    android:padding="8dp" />
+            </ScrollView>
+        </LinearLayout>
+    </FrameLayout>
+</FrameLayout>
