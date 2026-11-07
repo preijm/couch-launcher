@@ -52,7 +52,7 @@ class MainActivity : Activity() {
     }
 
     /** An installed app as found on the TV. */
-    private class Installed(val pkg: String, val label: String, val banner: Drawable?)
+    private class Installed(val pkg: String, val label: String, val banner: Drawable?, val icon: Drawable?)
 
     private class Row(
         val spec: AppSpec,
@@ -89,6 +89,9 @@ class MainActivity : Activity() {
     private lateinit var panelScroll: ScrollView
 
     private val rows = mutableListOf<Row>()
+    /** The apps in the list, as set from the TV (see [AppList]). */
+    private var apps: List<AppSpec> = emptyList()
+    private var addRow: View? = null
     private val periodButtons = mutableListOf<TextView>()
     private var period = Period.WEEK
     private var current = 0
@@ -124,8 +127,11 @@ class MainActivity : Activity() {
     }
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
+            // The TV changes packages all the time; only rebuild for apps that are in the list.
+            val pkg = i.data?.schemeSpecificPart ?: return
+            if (apps.none { pkg in it.packages }) return
             dirty = true
-            if (hasWindowFocus()) { buildList(); rows.getOrNull(current)?.view?.requestFocus() }
+            if (hasWindowFocus()) rebuildList()
         }
     }
 
@@ -182,8 +188,8 @@ class MainActivity : Activity() {
         visible = true
         updateClock()
         loadStats()
-        if (launching) { launching = false; root.alpha = 1f; rows.getOrNull(current)?.view?.requestFocus() }
-        if (dirty) { buildList(); rows.getOrNull(current)?.view?.requestFocus() }
+        if (launching) { launching = false; root.alpha = 1f; focusRow(current) }
+        if (dirty) rebuildList(force = true)
         if (replayIntro && isScreenOn()) { replayIntro = false; closeOverlay(); playIntro() }
     }
 
@@ -205,14 +211,14 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         setIntent(intent)
         closeOverlay()
-        rows.firstOrNull()?.view?.requestFocus()
+        focusRow(0)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) {
                 if (overlay.visibility == View.VISIBLE) closeOverlay()
-                else rows.firstOrNull()?.view?.requestFocus()
+                else focusRow(0)
             }
             return true // a home screen has nowhere to go back to
         }
@@ -312,9 +318,10 @@ class MainActivity : Activity() {
 
     private fun loadStats() {
         if (demo) { showStats(demoStats(), true); return }
+        val specs = apps
         io.execute {
             val ok = usage.hasPermission()
-            val s = if (ok) runCatching { usage.load(Config.apps) }
+            val s = if (ok) runCatching { usage.load(specs) }
                 .onFailure { Log.w(TAG, "Could not read usage", it) }.getOrDefault(emptyMap()) else emptyMap()
             main.post { if (!isDestroyed) showStats(s, ok) }
         }
@@ -329,12 +336,12 @@ class MainActivity : Activity() {
     private fun showStats(s: Map<String, AppStats>, ok: Boolean) {
         stats = s
         hasUsage = ok
-        val values = Config.apps.map { valueFor(s[it.name]) }
+        val values = apps.map { valueFor(s[it.name]) }
         val total = values.sum()
         findViewById<TextView>(R.id.totalLabel).text = period.label
         findViewById<TextView>(R.id.total).text = if (ok) UsageRepo.format(total) else "–"
         findViewById<SegmentBar>(R.id.segments).setValues(
-            if (ok) Config.apps.mapIndexed { i, a -> values[i] to Color.parseColor(a.color) } else emptyList(),
+            if (ok) apps.mapIndexed { i, a -> values[i] to Color.parseColor(a.color) } else emptyList(),
         )
         findViewById<TextView>(R.id.perDay).text =
             if (ok) "≈ ${UsageRepo.format(total / daysInPeriod())} per day" else "Watch time not available yet"
@@ -354,8 +361,8 @@ class MainActivity : Activity() {
     private fun fillRow(r: Row) {
         val st = stats[r.spec.name]
         val v = valueFor(st)
-        val total = Config.apps.sumOf { valueFor(stats[it.name]) }
-        val max = Config.apps.maxOf { valueFor(stats[it.name]) }.coerceAtLeast(1L)
+        val total = apps.sumOf { valueFor(stats[it.name]) }
+        val max = apps.maxOf { valueFor(stats[it.name]) }.coerceAtLeast(1L)
         val now = Date()
         r.time.text = if (r.app == null && !demo) "not on this TV" else if (hasUsage) UsageRepo.format(v) else ""
         r.share.setValue(if (hasUsage) v.toFloat() / max else 0f, r.color)
@@ -387,31 +394,119 @@ class MainActivity : Activity() {
         val q = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
         return pm.queryIntentActivities(q, 0).associate { ri ->
             val pkg = ri.activityInfo.packageName
-            pkg to Installed(pkg, ri.loadLabel(pm).toString(), ri.activityInfo.loadBanner(pm))
+            pkg to Installed(pkg, ri.loadLabel(pm).toString(), ri.activityInfo.loadBanner(pm), ri.loadIcon(pm))
         }
     }
 
     private fun buildList() {
         dirty = false
-        val apps = installedApps()
+        apps = AppList.load(this)
+        val installed = installedApps()
         list.removeAllViews()
         rows.clear()
-        Config.apps.forEachIndexed { i, spec ->
-            val app = if (demo) null else spec.packages.firstNotNullOfOrNull { apps[it] }
+        apps.forEachIndexed { i, spec ->
+            val app = if (demo) null else spec.packages.firstNotNullOfOrNull { installed[it] }
             val r = rowView(spec, app)
             rows += r
             list.addView(r.view)
             r.view.setOnFocusChangeListener { _, has -> if (has) current = i; setExpanded(r, has) }
             r.view.setOnClickListener { open(r) }
+            r.view.setOnLongClickListener { showAppMenu(i); true }
             r.view.setOnKeyListener { _, code, ev ->
-                if (code == KeyEvent.KEYCODE_DPAD_LEFT && ev.action == KeyEvent.ACTION_DOWN) {
-                    periodButtons.getOrNull(period.ordinal)?.requestFocus(); true
-                } else false
+                when {
+                    ev.action != KeyEvent.ACTION_DOWN -> false
+                    code == KeyEvent.KEYCODE_DPAD_LEFT -> { periodButtons.getOrNull(period.ordinal)?.requestFocus(); true }
+                    // Last app: down goes to "Add app" (or nowhere), never across to the left side.
+                    code == KeyEvent.KEYCODE_DPAD_DOWN && i == apps.size - 1 -> { focusAddRow(); true }
+                    else -> false
+                }
             }
             if (i == 0 && Build.VERSION.SDK_INT >= 26) r.view.isFocusedByDefault = true
             fillRow(r)
         }
+        addRow = if (apps.size < AppList.MAX && !demo) addAppRow().also { list.addView(it) } else null
         current = current.coerceIn(0, (rows.size - 1).coerceAtLeast(0))
+    }
+
+    /** Quiet "+ Add app" line under the list; lights up only when you're on it. */
+    private fun addAppRow(): View {
+        val v = TextView(this).apply {
+            text = "+  Add app"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTextColor(ADD_DIM)
+            letterSpacing = 0.04f
+            setPadding(dp(22), dp(8), dp(22), dp(8))
+            isFocusable = true
+            isFocusableInTouchMode = true
+            isClickable = true
+            if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
+            setOnFocusChangeListener { _, has -> setTextColor(if (has) Color.WHITE else ADD_DIM) }
+            setOnClickListener { showAllApps(pick = true) }
+            setOnKeyListener { _, code, ev ->
+                when {
+                    ev.action != KeyEvent.ACTION_DOWN -> false
+                    code == KeyEvent.KEYCODE_DPAD_LEFT -> { periodButtons.getOrNull(period.ordinal)?.requestFocus(); true }
+                    code == KeyEvent.KEYCODE_DPAD_UP -> { focusRow(rows.size - 1); true }
+                    code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_RIGHT -> true
+                    else -> false
+                }
+            }
+        }
+        v.layoutParams = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(6) }
+        return v
+    }
+
+    /**
+     * Go to "Add app" without the list's layout animation: while the card above it collapses,
+     * that animation briefly gives the line a negative height, and Android then drops focus.
+     */
+    private fun focusAddRow() {
+        val row = addRow ?: return
+        val lt = list.layoutTransition
+        list.layoutTransition = null
+        row.requestFocus()
+        list.post { list.post { list.layoutTransition = lt } }
+    }
+
+    /** Hold OK on an app: move it, or take it off the list. */
+    private fun showAppMenu(i: Int) {
+        val spec = apps.getOrNull(i) ?: return
+        val items = mutableListOf<Pair<String, () -> Unit>>()
+        if (i > 0) items += "Move up" to { changeList(i - 1) { it.add(i - 1, it.removeAt(i)) } }
+        if (i < apps.size - 1) items += "Move down" to { changeList(i + 1) { it.add(i + 1, it.removeAt(i)) } }
+        items += "Remove from list" to { changeList(maxOf(0, i - 1)) { it.removeAt(i) } }
+        showPanel(spec.name, items)
+    }
+
+    private fun addApp(a: Installed) {
+        val spec = AppList.newSpec(a.label, a.pkg, a.icon, apps)
+        changeList(apps.size) { it.add(spec) }
+    }
+
+    /** Change the saved list, rebuild the rows and put the selection on [focus]. */
+    private fun changeList(focus: Int, edit: (MutableList<AppSpec>) -> Unit) {
+        val l = apps.toMutableList()
+        edit(l)
+        AppList.save(this, l)
+        returnFocus = null
+        closeOverlay()
+        buildList()
+        loadStats()
+        current = focus.coerceIn(0, (rows.size - 1).coerceAtLeast(0))
+        focusRow(current)
+    }
+
+    /** Select app [i] once the list has laid out (right after a rebuild, focus requests can get lost). */
+    private fun focusRow(i: Int) {
+        list.post { rows.getOrNull(i.coerceIn(0, (rows.size - 1).coerceAtLeast(0)))?.view?.requestFocus() }
+    }
+
+    /** Rebuild the rows; if an app was selected, select it again instead of letting focus jump left. */
+    private fun rebuildList(force: Boolean = false) {
+        val onRow = rows.any { it.view.hasFocus() }
+        buildList()
+        loadStats()
+        if (onRow || force) focusRow(current)
     }
 
     private fun label(text: String) = TextView(this).apply {
@@ -438,13 +533,18 @@ class MainActivity : Activity() {
 
         // Header: icon, name, (share line | dot), time
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val icon = ImageView(this).apply { setImageResource(spec.icon); imageTintList = ColorStateList.valueOf(DIM) }
+        val icon = ImageView(this).apply {
+            if (spec.icon != 0) setImageResource(spec.icon) else setImageDrawable(LetterIcon(spec.name.take(1).uppercase()))
+            imageTintList = ColorStateList.valueOf(DIM)
+        }
         val name = TextView(this).apply {
             text = spec.name
             setTextColor(DIM)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, NAME_SMALL)
             letterSpacing = -0.02f
             includeFontPadding = false
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         }
         val share = ShareLine(this)
         val dot = View(this).apply {
@@ -601,20 +701,24 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun showAllApps() {
-        val apps = installedApps().values.filter { it.pkg != packageName }.sortedBy { it.label.lowercase() }
-        panelTitle.text = "All apps"
+    /** All apps; with [pick], only those not in the list yet, and choosing one adds it. */
+    private fun showAllApps(pick: Boolean = false) {
+        val inList = apps.flatMap { it.packages }.toSet()
+        val shown = installedApps().values
+            .filter { it.pkg != packageName && !(pick && it.pkg in inList) }
+            .sortedBy { it.label.lowercase() }
+        panelTitle.text = if (pick) "Add an app" else "All apps"
         panelBody.removeAllViews()
-        apps.chunked(4).forEach { chunk ->
+        shown.chunked(4).forEach { chunk ->
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
-            chunk.forEach { a -> line.addView(appTile(a)) }
+            chunk.forEach { a -> line.addView(appTile(a, if (pick) ({ addApp(a) }) else null)) }
             panelBody.addView(line)
         }
         panelScroll.layoutParams = panelScroll.layoutParams.apply { height = dp(330) }
         showOverlay()
     }
 
-    private fun appTile(a: Installed): View {
+    private fun appTile(a: Installed, onPick: (() -> Unit)? = null): View {
         val radius = dp(10).toFloat()
         val frame = FrameLayout(this).apply {
             isFocusable = true
@@ -644,6 +748,7 @@ class MainActivity : Activity() {
             v.foreground = if (has) ring else null
         }
         frame.setOnClickListener {
+            if (onPick != null) { onPick(); return@setOnClickListener }
             val pm = packageManager
             val i = pm.getLeanbackLaunchIntentForPackage(a.pkg) ?: pm.getLaunchIntentForPackage(a.pkg)
             closeOverlay()
@@ -693,7 +798,8 @@ class MainActivity : Activity() {
     private fun closeOverlay() {
         if (overlay.visibility != View.VISIBLE) return
         overlay.animate().alpha(0f).setDuration(150).withEndAction { overlay.visibility = View.GONE }.start()
-        (returnFocus ?: rows.firstOrNull()?.view)?.requestFocus()
+        val back = returnFocus
+        if (back != null && back.isAttachedToWindow) back.requestFocus() else focusRow(current)
     }
 
     private fun firstFocusable(g: ViewGroup): View? {
@@ -748,6 +854,7 @@ class MainActivity : Activity() {
     companion object {
         private const val TAG = "BankLaunch"
         private val DIM = Color.parseColor("#8A8A8A")
+        private val ADD_DIM = Color.parseColor("#4A4A4A")
         private const val NAME_SMALL = 28f
         private const val NAME_BIG = 40f
         /** One duration for everything that moves when the selection changes. */

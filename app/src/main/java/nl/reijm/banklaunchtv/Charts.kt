@@ -89,7 +89,8 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
         val barMax = height - labelH
         val gap = 5 * d
         val bw = (width - gap * 6) / 7
-        val max = values.maxOrNull()?.coerceAtLeast(1L)?.toFloat() ?: 1f
+        // At least half an hour as the top, so a few seconds of use doesn't show as a full bar.
+        val max = (values.maxOrNull() ?: 0L).coerceAtLeast(30 * 60_000L).toFloat()
         val today = values.indexOfLast { it >= 0 }
         val dim = Color.rgb(
             (Color.red(color) * 0.36f).toInt(), (Color.green(color) * 0.36f).toInt(), (Color.blue(color) * 0.36f).toInt(),
@@ -134,4 +135,29 @@ class ShareLine @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
         paint.color = color
         r.set(0f, 0f, width * fraction * progress, height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
     }
+}
+
+/** An app's first letter, as a thin icon that takes the ImageView's tint like the line icons. */
+class LetterIcon(private val letter: String) : android.graphics.drawable.Drawable() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif-light", Typeface.NORMAL)
+    }
+    private var tint: android.content.res.ColorStateList? = null
+
+    override fun draw(c: Canvas) {
+        val b = bounds
+        paint.color = tint?.getColorForState(state, Color.WHITE) ?: Color.WHITE
+        paint.textSize = b.height() * 1.05f
+        val y = b.exactCenterY() - (paint.descent() + paint.ascent()) / 2
+        c.drawText(letter, b.exactCenterX(), y, paint)
+    }
+
+    override fun setTintList(t: android.content.res.ColorStateList?) { tint = t; invalidateSelf() }
+    override fun isStateful() = tint?.isStateful == true
+    override fun onStateChange(s: IntArray): Boolean { invalidateSelf(); return true }
+    override fun setAlpha(a: Int) { paint.alpha = a }
+    override fun setColorFilter(f: android.graphics.ColorFilter?) { paint.colorFilter = f }
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
 }
