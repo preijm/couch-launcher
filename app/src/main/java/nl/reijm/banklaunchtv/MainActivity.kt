@@ -35,8 +35,12 @@ class MainActivity : Activity() {
         val label: String,
         val banner: Drawable?,
         val icon: Drawable?,
+        val color: Int? = null,
         val launch: () -> Intent?,
     )
+
+    /** Preview mode (adb shell am start ... --ez demo true): sample tiles for screenshots off-TV. */
+    private val demo get() = intent?.getBooleanExtra("demo", false) == true
 
     private lateinit var rowsView: LinearLayout
     private lateinit var scroll: ScrollView
@@ -82,7 +86,7 @@ class MainActivity : Activity() {
     /** Home pressed while we're already in front: jump back to the first tile. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        focusFirst()
+        rowsView.post { focusFirst() }
     }
 
     // A home screen has nowhere to go back to.
@@ -106,15 +110,16 @@ class MainActivity : Activity() {
         val all = leanbackApps()
         val byPkg = all.associateBy { it.first }
 
-        val favs = Config.favourites.mapNotNull { byPkg[it]?.second }
+        val favs = if (demo) demoFavourites() else Config.favourites.mapNotNull { byPkg[it]?.second }
         if (favs.isNotEmpty()) addRow("Favorieten", favs)
 
-        addRow("Ingangen", hdmiInputs() + settingsTile())
+        val inputs = if (demo) (1..4).map { demoTile("HDMI $it", "#2D5B4A") } else hdmiInputs()
+        addRow("Ingangen", inputs + settingsTile())
 
         val rest = all.filter { it.first !in Config.hidden }.map { it.second }
         addRow("Alle apps", rest)
 
-        focusFirst()
+        rowsView.post { focusFirst() }
     }
 
     /** All apps with a TV (leanback) launcher entry, sorted by name. */
@@ -156,6 +161,18 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun demoTile(label: String, color: String) =
+        Tile(label, null, null, Color.parseColor(color)) { null }
+
+    private fun demoFavourites() = listOf(
+        demoTile("SmartTube", "#C4302B"),
+        demoTile("Netflix", "#8E0B12"),
+        demoTile("Prime Video", "#1B6FA8"),
+        demoTile("Disney+", "#16306B"),
+        demoTile("NPO Start", "#E8641B"),
+        demoTile("Spotify", "#1A7F3C"),
+    )
+
     private fun settingsTile() = Tile(
         "Instellingen", null, getDrawable(android.R.drawable.ic_menu_preferences),
     ) { Intent(Settings.ACTION_SETTINGS) }
@@ -196,7 +213,7 @@ class MainActivity : Activity() {
         val frame = FrameLayout(this).apply {
             isFocusable = true
             isClickable = true
-            setBackgroundColor(Color.parseColor("#2C3440"))
+            setBackgroundColor(t.color ?: Color.parseColor("#2C3440"))
             outlineProvider = object : ViewOutlineProvider() {
                 override fun getOutline(view: View, outline: Outline) {
                     outline.setRoundRect(0, 0, view.width, view.height, dp(10).toFloat())
@@ -212,19 +229,20 @@ class MainActivity : Activity() {
                 scaleType = ImageView.ScaleType.FIT_XY
             }, FrameLayout.LayoutParams(-1, -1))
         } else {
-            frame.addView(ImageView(this).apply {
+            if (t.icon != null) frame.addView(ImageView(this).apply {
                 setImageDrawable(t.icon)
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }, FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(14) })
             frame.addView(TextView(this).apply {
                 text = t.label
                 setTextColor(Color.WHITE)
-                textSize = 13f
+                textSize = if (t.icon == null) 18f else 13f
+                if (t.icon == null) typeface = android.graphics.Typeface.DEFAULT_BOLD
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
                 gravity = Gravity.CENTER
-            }, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
-                bottomMargin = dp(10); leftMargin = dp(8); rightMargin = dp(8)
+            }, FrameLayout.LayoutParams(-1, -2, if (t.icon == null) Gravity.CENTER else Gravity.BOTTOM).apply {
+                bottomMargin = if (t.icon == null) 0 else dp(10); leftMargin = dp(8); rightMargin = dp(8)
             })
         }
 
