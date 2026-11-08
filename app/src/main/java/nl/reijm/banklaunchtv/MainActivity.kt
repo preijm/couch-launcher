@@ -1054,7 +1054,7 @@ class MainActivity : Activity() {
                 item.addView(View(this).apply {
                     background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(b.color) }
                 }, LinearLayout.LayoutParams(dp(9), dp(9)).apply { marginEnd = dp(10) })
-                item.addView(text(b.name, 14f, if (b.color in listOf(OTHER, OTHER_1, OTHER_2)) GREY else Color.WHITE).apply {
+                item.addView(text(b.name, 14f, Color.WHITE).apply {
                     maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
                 }, LinearLayout.LayoutParams(-2, -2).apply { weight = 0f })
                 item.addView(text(WeekBarsText.short(ms), 14f, Color.WHITE, "sans-serif-medium"),
