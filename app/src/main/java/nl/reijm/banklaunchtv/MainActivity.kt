@@ -366,21 +366,33 @@ class MainActivity : Activity() {
             if (ok) apps.mapIndexed { i, a -> values[i] to Color.parseColor(a.color) } else emptyList(),
         )
         findViewById<TextView>(R.id.perDay).text =
-            if (ok) weekSentence(total / daysInPeriod()) else "Watch time not available yet"
+            if (ok) weekSentence() else "Watch time not available yet"
         rows.forEach { fillRow(it) }
         if (analysis != null) fillAnalysisStats()
     }
 
-    /** "≈ 2h 00m per day · down by 41%" compared to usual (see [usualPerDay]); within 10% "about usual". */
-    private fun weekSentence(perDay: Long): CharSequence {
-        val usual = usualPerDay()
-        val head = "≈ ${UsageRepo.format(perDay)} per day"
-        if (usual <= 0) return head
-        val pct = Math.round((perDay - usual) * 100.0 / usual).toInt()
+    /**
+     * "≈ 2h 00m per day · 11% more than last week". Compares this week so far with last week up to
+     * the same day and time (Wednesday evening against last Wednesday evening); within 5% "same as last week".
+     */
+    private fun weekSentence(): CharSequence {
+        val week = apps.sumOf { stats[it.name]?.week ?: 0L }
+        val head = "≈ ${UsageRepo.format(week / daysInPeriod())} per day"
+        val last = apps.map { stats[it.name]?.lastWeekSoFar ?: -1L }
+        val pct = if (last.isNotEmpty() && last.none { it < 0 }) {
+            if (last.sum() < 20 * 60_000L) return head
+            val now = apps.sumOf { a -> stats[a.name]?.weekDays?.filter { it > 0 }?.sum() ?: 0L }
+            Math.round((now - last.sum()) * 100.0 / last.sum()).toInt()
+        } else {
+            // Last week's days are no longer on the TV: compare with its average per day instead.
+            val before = history?.weeks?.let { it.getOrNull(it.size - 2) }?.perDay ?: return head
+            if (before < 5 * 60_000L) return head
+            Math.round((week / daysInPeriod() - before) * 100.0 / before).toInt()
+        }
         val cmp = when {
-            Math.abs(pct) < 10 -> "about usual"
-            pct < 0 -> "down by ${-pct}%"
-            else -> "up by $pct%"
+            Math.abs(pct) < 5 -> "same as last week"
+            pct < 0 -> "${-pct}% less than last week"
+            else -> "$pct% more than last week"
         }
         return "$head · $cmp"
     }
@@ -901,11 +913,11 @@ class MainActivity : Activity() {
         }
     }
 
-    /** New history: "usual" may have changed, so the home line too. */
+    /** New history for the analysis page. */
     private fun onHistory(h: History) {
         history = h
         if (hasUsage) findViewById<TextView>(R.id.perDay).text =
-            weekSentence(apps.sumOf { stats[it.name]?.week ?: 0L } / daysInPeriod())
+            weekSentence()
         fillAnalysisStats()
         fillHistory()
     }
@@ -914,26 +926,13 @@ class MainActivity : Activity() {
     private fun measuredMonths(): List<PeriodAverage> =
         history?.months?.dropWhile { it.apps == null }.orEmpty()
 
-    /**
-     * What "usual" means: the average per day over the measured months (now: since June).
-     * Before the history is read, this year's average stands in.
-     */
-    private fun usualPerDay(): Long {
-        val months = measuredMonths()
-        if (months.isNotEmpty()) {
-            val days = months.sumOf { it.days }
-            if (days > 0) return months.sumOf { it.total } / days
-        }
-        return apps.sumOf { stats[it.name]?.year ?: 0L } / Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
-    }
-
     /** The parts that come straight from the home screen's numbers, plus the measured total. */
     private fun fillAnalysisStats() {
         val a = analysis ?: return
         val week = apps.sumOf { stats[it.name]?.week ?: 0L }
         val month = apps.sumOf { stats[it.name]?.month ?: 0L }
         val c = Calendar.getInstance()
-        a.findViewById<TextView>(R.id.anSentence).text = weekSentence(week / daysInPeriod())
+        a.findViewById<TextView>(R.id.anSentence).text = weekSentence()
 
         val totals = a.findViewById<LinearLayout>(R.id.anTotals)
         totals.removeAllViews()

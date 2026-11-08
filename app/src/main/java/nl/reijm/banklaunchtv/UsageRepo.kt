@@ -17,6 +17,8 @@ class AppStats(
     val year: Long,
     /** This week Monday..Sunday; days still to come are -1. */
     val weekDays: LongArray,
+    /** Last week from Monday up to this same day and time; -1 when the TV has no full record of it. */
+    val lastWeekSoFar: Long = -1L,
 )
 
 /**
@@ -91,6 +93,22 @@ class UsageRepo(private val ctx: Context) {
         val yearly = overlapTotals(UsageStatsManager.INTERVAL_YEARLY, yearStart, now)
         val weekly = systemTotals(UsageStatsManager.INTERVAL_WEEKLY, weekStart, now)
 
+        // Last week up to this moment: its Monday until yesterday-a-week-ago whole, then the same
+        // weekday until the same time. Null when any of those days has no record.
+        val lastWeekStart = addDays(weekStart, -7)
+        val sameDay = addDays(today, -7)
+        val sameMoment = cal(now).apply { add(Calendar.DAY_OF_MONTH, -7) }.timeInMillis
+        val lastWeek: List<Map<String, Long>>? = run {
+            val days = mutableListOf<Map<String, Long>>()
+            var x = lastWeekStart
+            while (x < sameDay) {
+                days += dayTotals(x, now).takeIf { it.isNotEmpty() } ?: return@run null
+                x = addDays(x, 1)
+            }
+            days += fromEvents(sameDay, sameMoment) ?: return@run null
+            days
+        }
+
         return specs.associate { spec ->
             fun sum(m: Map<String, Long>?) = spec.packages.sumOf { m?.get(it) ?: 0L }
             val week = perDay.filterKeys { it >= weekStart }.values.sumOf { sum(it) }
@@ -105,6 +123,7 @@ class UsageRepo(private val ctx: Context) {
                 month = maxOf(month, sum(monthly)),
                 year = maxOf(year, sum(yearly), month),
                 weekDays = weekDays,
+                lastWeekSoFar = lastWeek?.sumOf { sum(it) } ?: -1L,
             )
         }
     }
