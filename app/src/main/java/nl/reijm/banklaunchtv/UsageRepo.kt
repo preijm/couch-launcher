@@ -229,6 +229,9 @@ class UsageRepo(private val ctx: Context) {
         val seen = HashSet<String>()                        // "pkg/class" seen today
         val total = HashMap<String, Long>()
         var any = false
+        var screenOn = true        // until told otherwise, the screen was on at the start
+        var screenOnSince = start
+        var anyResumed = false     // something came on screen since the screen went on
 
         fun stop(pkg: String, at: Long) {
             val from = since.remove(pkg) ?: return
@@ -242,16 +245,21 @@ class UsageRepo(private val ctx: Context) {
             val screen = pkg + "/" + (e.className ?: "")
             when (e.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> {
+                    anyResumed = true
                     seen += screen
                     val set = resumed.getOrPut(pkg) { HashSet() }
                     if (set.isEmpty() && pkg !in since) since[pkg] = e.timeStamp
                     set += screen
                 }
                 UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED -> {
-                    // Paused without a resume today: it was already open at midnight.
+                    // Paused without a resume today: it was already open. Count it from when the screen
+                    // went on, but only if nothing else came on screen in between; otherwise it was
+                    // just sitting in the background (Sony's TV app does that).
                     if (screen !in seen) {
                         seen += screen
-                        if (e.eventType == UsageEvents.Event.ACTIVITY_PAUSED && pkg !in since) since[pkg] = start
+                        if (e.eventType == UsageEvents.Event.ACTIVITY_PAUSED && pkg !in since && screenOn && !anyResumed) {
+                            since[pkg] = screenOnSince
+                        }
                     }
                     val set = resumed[pkg]
                     set?.remove(screen)
@@ -260,6 +268,12 @@ class UsageRepo(private val ctx: Context) {
                 UsageEvents.Event.SCREEN_NON_INTERACTIVE, UsageEvents.Event.DEVICE_SHUTDOWN -> {
                     since.keys.toList().forEach { stop(it, e.timeStamp) }
                     resumed.clear()
+                    screenOn = false
+                }
+                UsageEvents.Event.SCREEN_INTERACTIVE, UsageEvents.Event.DEVICE_STARTUP -> {
+                    screenOn = true
+                    screenOnSince = e.timeStamp
+                    anyResumed = false
                 }
             }
         }
@@ -317,7 +331,7 @@ class UsageRepo(private val ctx: Context) {
     companion object {
         private const val HOUR = 3_600_000L
         /** Raise when the way days are counted changes, so saved days are recounted. */
-        private const val FORMAT = 2
+        private const val FORMAT = 4
 
         /** "6h 10m", "0h 50m"; from 10 hours on, whole hours only: 43h 35m shows as "44h". */
         fun format(ms: Long): String {

@@ -201,6 +201,13 @@ class MainActivity : Activity() {
         // adb shell am start -n nl.reijm.banklaunchtv/.MainActivity --ez analysis true
         if (intent?.getBooleanExtra("analysis", false) == true) root.post { showAnalysis() }
         if (intent?.getBooleanExtra("buckets", false) == true) io.execute { usage.rawBuckets().forEach { Log.i(TAG, it) } }
+        // adb shell am start -n nl.reijm.banklaunchtv/.MainActivity --ez weekApps true; adb logcat -s BankLaunch
+        if (intent?.getBooleanExtra("weekApps", false) == true) io.execute {
+            usage.history(apps).weeks.forEach { w ->
+                Log.i(TAG, "week ${Date(w.start)}: " + w.apps.orEmpty().entries.sortedByDescending { it.value }
+                    .filter { it.value >= 600_000L }.joinToString(" ") { "${it.key}=${UsageRepo.format(it.value)}" })
+            }
+        }
         if (intent?.getBooleanExtra("topApps", false) == true) io.execute {
             usage.topApps().take(25).forEach { (pkg, ms) -> Log.i(TAG, "top ${UsageRepo.format(ms)}  $pkg") }
         }
@@ -817,14 +824,18 @@ class MainActivity : Activity() {
         root.addView(a, FrameLayout.LayoutParams(-1, -1))
         analysis = a
 
-        col.addView(text("Your TV time", 30f, Color.WHITE, "sans-serif-light"))
-        col.addView(text("", 15f, GREY).apply { id = R.id.anSentence }, lp(top = 8))
-
-        val totals = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; id = R.id.anTotals }
-        col.addView(totals, lp(top = 20))
+        // Header: title and the week line on the left, the totals small in the top right.
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        header.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(text("Your TV time", 30f, Color.WHITE, "sans-serif-light"))
+            addView(text("", 15f, GREY).apply { id = R.id.anSentence }, lp(top = 8))
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; id = R.id.anTotals })
+        col.addView(header, LinearLayout.LayoutParams(-1, -2))
 
         val charts = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        col.addView(charts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(20) })
+        col.addView(charts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(36) })
         fun chartBlock(titleId: Int, chartId: Int, endMargin: Int) = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(heading("").apply { id = titleId })
@@ -937,10 +948,11 @@ class MainActivity : Activity() {
         blocks.forEach { (title, total, days) ->
             totals.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
+                gravity = Gravity.END
                 addView(heading(title))
-                addView(text(UsageRepo.format(total), 30f, Color.WHITE, "sans-serif-light"), lp(top = 6))
-                addView(text("≈ ${UsageRepo.format(total / days.coerceAtLeast(1))} per day", 13f, GREY), lp(top = 4))
-            }, LinearLayout.LayoutParams(dp(200), -2))
+                addView(text(UsageRepo.format(total), 24f, Color.WHITE, "sans-serif-light"), lp(top = 6))
+                addView(text("≈ ${UsageRepo.format(total / days.coerceAtLeast(1))} a day", 12f, GREY), lp(top = 4))
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(40) })
         }
     }
 
@@ -998,14 +1010,21 @@ class MainActivity : Activity() {
         val rows = apps.map { spec -> Triple(spec.name, spec.packages.sumOf { byApp[it] ?: 0L }, Color.parseColor(spec.color)) }
             .sortedByDescending { it.second }.toMutableList()
         val listed = apps.flatMap { it.packages }.toSet()
-        val other = byApp.filterKeys { it !in listed && it !in NOT_WATCHING && it != packageName }.values.sum()
-        if (other >= 60_000L) rows += Triple("Other apps", other, 0xFF6A6A6A.toInt())
+        // Other apps: the bigger ones by name, the rest together.
+        val others = byApp.filterKeys { it !in listed && it !in NOT_WATCHING && it != packageName }
+            .entries.sortedByDescending { it.value }
+        val named = others.filter { it.value >= 30 * 60_000L }.take(3)
+        named.forEach { rows += Triple(appLabel(it.key), it.value, 0xFF6A6A6A.toInt()) }
+        val rest = others.drop(named.size).sumOf { it.value }
+        if (rest >= 60_000L) rows += Triple(if (named.isEmpty()) "Other apps" else "Other apps (rest)", rest, 0xFF6A6A6A.toInt())
         val total = rows.sumOf { it.second }.coerceAtLeast(1L)
         rows.forEach { (name, ms, color) ->
             list.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                addView(text(name, 13f, if (name == "Other apps") GREY else Color.WHITE), LinearLayout.LayoutParams(dp(130), -2))
+                addView(text(name, 13f, if (color == 0xFF6A6A6A.toInt()) GREY else Color.WHITE).apply {
+                    maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                }, LinearLayout.LayoutParams(dp(150), -2))
                 addView(ShareLine(this@MainActivity).apply { setValue(ms.toFloat() / total, color) },
                     LinearLayout.LayoutParams(dp(360), dp(5)))
                 addView(text(UsageRepo.format(ms), 13f, Color.WHITE).apply { gravity = Gravity.END },
@@ -1015,6 +1034,11 @@ class MainActivity : Activity() {
             }, lp(top = 3))
         }
     }
+
+    /** An app's name as the TV shows it, for packages outside the list. */
+    private fun appLabel(pkg: String): String = runCatching {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    }.getOrDefault(pkg)
 
     private fun demoHistory(): History {
         val h = 3_600_000L
