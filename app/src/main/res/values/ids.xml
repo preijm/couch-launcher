@@ -5,6 +5,7 @@
     <item name="anWeeks" type="id" />
     <item name="anMonths" type="id" />
     <item name="anApps" type="id" />
+    <item name="anAppsTitle" type="id" />
     <item name="anWeeksTitle" type="id" />
     <item name="anMonthsTitle" type="id" />
 </resources>

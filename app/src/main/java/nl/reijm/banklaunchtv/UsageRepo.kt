@@ -19,14 +19,20 @@ class AppStats(
     val weekDays: LongArray,
 )
 
-/** Average watch time per day over one week or month; null when Android has no record of it. */
-class PeriodAverage(val start: Long, val perDay: Long?, val total: Long = 0L, val days: Int = 1)
+/**
+ * One week or month: time per app (all apps, by package), or null when the TV has no complete
+ * record of it. [total] and [perDay] count the apps in the home list.
+ */
+class PeriodAverage(val start: Long, val end: Long, val apps: Map<String, Long>?, val days: Int, listed: Set<String>) {
+    val total: Long = apps?.filterKeys { it in listed }?.values?.sum() ?: 0L
+    val perDay: Long? = apps?.let { total / days.coerceAtLeast(1) }
+}
 
 /** History for the analysis screen, for the apps in the list together. */
 class History(
     /** The last 8 weeks, oldest first; the last one is this week so far. */
     val weeks: List<PeriodAverage>,
-    /** January up to this month, oldest first; the last one is this month so far. */
+    /** The last 12 months, oldest first; the last one is this month so far. */
     val months: List<PeriodAverage>,
 )
 
@@ -116,41 +122,71 @@ class UsageRepo(private val ctx: Context) {
             .let { if (it.timeInMillis > today) it.apply { add(Calendar.DAY_OF_MONTH, -7) } else it }.timeInMillis
         val thisMonth = cal(today).apply { set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
 
-        fun average(start: Long, end: Long, interval: Int): PeriodAverage {
+        /**
+         * Time per app for [start, end). Only when the records cover the whole period; finished
+         * periods are saved here for good, because Android throws its own records away after a while.
+         */
+        fun period(key: String, start: Long, end: Long, interval: Int): PeriodAverage {
             val stop = minOf(end, now)
-            var fromDays = 0L
+            val finished = end <= today
+            if (finished) prefs.getString(key, null)?.let { saved ->
+                val apps = decode(saved)
+                val days = apps["#days"]?.toInt() ?: 1
+                return PeriodAverage(start, end, apps - "#days", days, pkgs)
+            }
+            val fromDays = HashMap<String, Long>()
             var days = 0
             var daysWithData = 0
             var d = start
             while (d < stop) {
                 val all = dayTotals(d, now)
                 if (all.isNotEmpty()) daysWithData++
-                fromDays += all.filterKeys { it in pkgs }.values.sum()
+                all.forEach { (p, ms) -> fromDays[p] = (fromDays[p] ?: 0L) + ms }
                 days++
                 d = addDays(d, 1)
             }
+            days = days.coerceAtLeast(1)
             // Android's records must reach back to the start of the period; a record that only
             // covers its last days would make the whole period look far too quiet.
             val recordsFrom = usm.queryUsageStats(interval, start, stop)
                 ?.filter { it.lastTimeStamp > start }?.minOfOrNull { it.firstTimeStamp }
-            val covered = stop == now || daysWithData >= minOf(days, days - 2) ||
+            val covered = stop == now || daysWithData >= days - 1 ||
                 (recordsFrom != null && recordsFrom <= addDays(start, 1))
-            val estimate = overlapTotals(interval, start, stop).filterKeys { it in pkgs }.values.sum()
-            val total = maxOf(fromDays, estimate)
-            days = days.coerceAtLeast(1)
-            return PeriodAverage(start, if (total > 0 && covered) total / days else null, if (covered) total else 0L, days)
+            if (!covered) return PeriodAverage(start, end, null, days, pkgs)
+            val estimate = overlapTotals(interval, start, stop)
+            fun listed(m: Map<String, Long>) = m.filterKeys { it in pkgs }.values.sum()
+            // Every day counted exactly: use that. Otherwise the larger of days and Android's records.
+            val apps = if (daysWithData == days || listed(fromDays) >= listed(estimate)) fromDays else estimate
+            if (finished) prefs.edit().putString(key, encode(apps + ("#days" to days.toLong()))).apply()
+            return PeriodAverage(start, end, apps, days, pkgs)
         }
 
         val weeks = (7 downTo 0).map { back ->
             val start = addDays(thisWeek, -7 * back)
-            average(start, addDays(start, 7), UsageStatsManager.INTERVAL_WEEKLY)
+            period("w:" + keyFmt.format(start), start, addDays(start, 7), UsageStatsManager.INTERVAL_WEEKLY)
         }
-        val months = (cal(today).get(Calendar.MONTH) downTo 0).map { back ->
+        val months = (11 downTo 0).map { back ->
             val start = cal(thisMonth).apply { add(Calendar.MONTH, -back) }.timeInMillis
             val end = cal(start).apply { add(Calendar.MONTH, 1) }.timeInMillis
-            average(start, end, UsageStatsManager.INTERVAL_MONTHLY)
+            period("m:" + keyFmt.format(start), start, end, UsageStatsManager.INTERVAL_MONTHLY)
         }
         return History(weeks, months)
+    }
+
+    /** Debug: Android's raw yearly and monthly records, per app (adb ... --ez buckets true). */
+    fun rawBuckets(): List<String> {
+        val f = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val out = mutableListOf<String>()
+        for ((name, interval) in listOf("year" to UsageStatsManager.INTERVAL_YEARLY, "month" to UsageStatsManager.INTERVAL_MONTHLY)) {
+            usm.queryUsageStats(interval, 0, System.currentTimeMillis()).orEmpty()
+                .groupBy { it.firstTimeStamp }.toSortedMap().forEach { (first, list) ->
+                    val last = list.maxOf { it.lastTimeStamp }
+                    val top = list.filter { it.totalTimeInForeground > 3_600_000L }.sortedByDescending { it.totalTimeInForeground }
+                        .joinToString(" ") { "${it.packageName}=${it.totalTimeInForeground / 3_600_000L}h" }
+                    out += "$name ${f.format(first)}..${f.format(last)} $top"
+                }
+        }
+        return out
     }
 
     /** Every app's time this year, most watched first (for finding apps missing from the list). */

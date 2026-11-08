@@ -192,8 +192,16 @@ class TrendBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
     private var values = listOf<Long?>()
     private var labels = listOf<String>()
     private var usual = 0L
+    private var selected = -1
+    private var active = false
     private var progress = 1f
     private val r = RectF()
+
+    /** The chosen bar: white while this chart is the one being browsed, lighter grey otherwise. */
+    fun select(index: Int, isActive: Boolean) {
+        selected = index; active = isActive
+        invalidate()
+    }
 
     fun setValues(v: List<Long?>, l: List<String>, usualPerDay: Long) {
         values = v; labels = l; usual = usualPerDay
@@ -220,9 +228,15 @@ class TrendBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
         fun y(ms: Long) = bottom - (bottom - top) * (ms / max)
 
         // The "usual" line first, so the bars sit on top of it.
+        line.pathEffect = android.graphics.DashPathEffect(floatArrayOf(3 * d, 3 * d), 0f)
         if (usual > 0) {
             val uy = y(usual)
-            c.drawLine(0f, uy, width - usualW + 4 * d, uy, line)
+            // Only in the gaps between bars, so it never runs through a bar's number.
+            for (i in 0 until n) {
+                val from = i * (bw + gap) + bw
+                val to = if (i == n - 1) width - usualW + 4 * d else (i + 1) * (bw + gap)
+                if (to > from) c.drawLine(from, uy, to, uy, line)
+            }
             label.color = 0xFF9A9A9A.toInt()
             label.textAlign = Paint.Align.LEFT
             c.drawText("usual", width - usualW + 8 * d, uy + 3.5f * d, label)
@@ -231,9 +245,15 @@ class TrendBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
 
         values.forEachIndexed { i, v ->
             val x = i * (bw + gap)
-            val last = i == n - 1
+            val last = i == selected && active
+            val chosen = i == selected
             val h = if (v == null) 1.5f * d else ((bottom - y(v)) * progress).coerceAtLeast(2 * d)
-            paint.color = when { v == null -> 0xFF2A2A2A.toInt(); last -> Color.WHITE; else -> 0xFF3E3E3E.toInt() }
+            paint.color = when {
+                v == null -> 0xFF2A2A2A.toInt()
+                last -> Color.WHITE
+                chosen -> 0xFF6A6A6A.toInt()
+                else -> 0xFF3E3E3E.toInt()
+            }
             r.set(x, bottom - h, x + bw, bottom)
             c.drawRoundRect(r, 2 * d, 2 * d, paint)
             label.color = if (last) Color.WHITE else 0xFF8A8A8A.toInt()

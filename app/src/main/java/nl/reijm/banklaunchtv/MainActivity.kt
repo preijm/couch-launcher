@@ -35,6 +35,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Space
 import android.widget.TextView
 import android.widget.Toast
 import java.text.SimpleDateFormat
@@ -199,6 +200,7 @@ class MainActivity : Activity() {
         // adb shell am start -n nl.reijm.banklaunchtv/.MainActivity --ez topApps true; adb logcat -s BankLaunch
         // adb shell am start -n nl.reijm.banklaunchtv/.MainActivity --ez analysis true
         if (intent?.getBooleanExtra("analysis", false) == true) root.post { showAnalysis() }
+        if (intent?.getBooleanExtra("buckets", false) == true) io.execute { usage.rawBuckets().forEach { Log.i(TAG, it) } }
         if (intent?.getBooleanExtra("topApps", false) == true) io.execute {
             usage.topApps().take(25).forEach { (pkg, ms) -> Log.i(TAG, "top ${UsageRepo.format(ms)}  $pkg") }
         }
@@ -240,13 +242,7 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (analysis != null) {
-            val close = event.keyCode in listOf(
-                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_ESCAPE,
-            )
-            if (close && event.action == KeyEvent.ACTION_UP) closeAnalysis()
-            return close || event.keyCode in DPAD_KEYS || super.dispatchKeyEvent(event)
-        }
+        if (analysis != null && analysisKey(event)) return true
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) {
                 if (overlay.visibility == View.VISIBLE) closeOverlay()
@@ -342,7 +338,7 @@ class MainActivity : Activity() {
             main.post { if (!isDestroyed) showStats(s, ok) }
             // Also get the analysis history ready, so its charts are there the moment it opens.
             val h = if (ok) runCatching { usage.history(specs) }.onFailure { Log.w(TAG, "No history", it) }.getOrNull() else null
-            if (h != null) main.post { history = h; fillHistory() }
+            if (h != null) main.post { if (!isDestroyed) onHistory(h) }
         }
     }
 
@@ -368,11 +364,7 @@ class MainActivity : Activity() {
         if (analysis != null) fillAnalysisStats()
     }
 
-    /** Average per day this year, for the apps in the list: what "usual" means. */
-    private fun usualPerDay(): Long =
-        apps.sumOf { stats[it.name]?.year ?: 0L } / Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
-
-    /** "≈ 2h 00m per day · down by 41%" compared to usual (this year's average); within 10% "about usual". */
+    /** "≈ 2h 00m per day · down by 41%" compared to usual (see [usualPerDay]); within 10% "about usual". */
     private fun weekSentence(perDay: Long): CharSequence {
         val usual = usualPerDay()
         val head = "≈ ${UsageRepo.format(perDay)} per day"
@@ -798,9 +790,18 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ analysis
 
-    /** Full-screen "your TV time": the week sentence, totals, trends and the year per app. */
+    /**
+     * Full-screen "your TV time": the week line, totals, per-day trends for weeks and months, and
+     * per app for the chosen bar. Left/right picks a bar, up/down switches weeks/months, Back closes.
+     * Only periods the TV has complete records for are shown, so every number is measured.
+     */
     private var analysis: FrameLayout? = null
     private var history: History? = null
+    private var weekBars: List<PeriodAverage> = emptyList()
+    private var monthBars: List<PeriodAverage> = emptyList()
+    private var anChart = 0 // 0 = weeks, 1 = months
+    private var anWeek = 0
+    private var anMonth = 0
 
     private fun showAnalysis() {
         if (analysis != null) return
@@ -812,7 +813,7 @@ class MainActivity : Activity() {
             alpha = 0f
         }
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        a.addView(col, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(64), dp(40), dp(64), dp(28)) })
+        a.addView(col, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(64), dp(36), dp(64), dp(24)) })
         root.addView(a, FrameLayout.LayoutParams(-1, -1))
         analysis = a
 
@@ -820,27 +821,32 @@ class MainActivity : Activity() {
         col.addView(text("", 15f, GREY).apply { id = R.id.anSentence }, lp(top = 8))
 
         val totals = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; id = R.id.anTotals }
-        col.addView(totals, lp(top = 22))
+        col.addView(totals, lp(top = 20))
 
         val charts = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        col.addView(charts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) })
-        fun chartBlock(title: String, titleId: Int, chartId: Int, endMargin: Int) = LinearLayout(this).apply {
+        col.addView(charts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(20) })
+        fun chartBlock(titleId: Int, chartId: Int, endMargin: Int) = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(heading(title).apply { id = titleId })
+            addView(heading("").apply { id = titleId })
             addView(
                 TrendBars(this@MainActivity).apply { id = chartId },
-                LinearLayout.LayoutParams(-1, dp(132)).apply { topMargin = dp(8) },
+                LinearLayout.LayoutParams(-1, dp(120)).apply { topMargin = dp(8) },
             )
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(endMargin) }
         }
-        charts.addView(chartBlock("PER DAY, RECENT WEEKS", R.id.anWeeksTitle, R.id.anWeeks, 48))
-        charts.addView(chartBlock("PER DAY, THIS YEAR", R.id.anMonthsTitle, R.id.anMonths, 0))
+        charts.addView(chartBlock(R.id.anWeeksTitle, R.id.anWeeks, 48))
+        charts.addView(chartBlock(R.id.anMonthsTitle, R.id.anMonths, 0))
 
-        col.addView(heading("THIS YEAR PER APP"), lp(top = 22))
+        col.addView(heading("").apply { id = R.id.anAppsTitle }, lp(top = 18))
         col.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; id = R.id.anApps }, lp(top = 6))
+        col.addView(Space(this), LinearLayout.LayoutParams(1, 0, 1f))
+        col.addView(text("◀ ▶  choose a bar     ▲ ▼  weeks or months     Back  close", 11f, 0xFF6A6A6A.toInt()))
 
+        anChart = 0
+        anWeek = Int.MAX_VALUE
+        anMonth = Int.MAX_VALUE
         fillAnalysisStats()
-        fillHistory() // ready from the background load; refreshed when that runs again
+        fillHistory()
         a.animate().alpha(1f).setDuration(220).start()
         a.requestFocus()
         if (history == null) loadHistory()
@@ -853,115 +859,176 @@ class MainActivity : Activity() {
         weekCard.requestFocus()
     }
 
+    /** Remote keys while the analysis is open. */
+    private fun analysisKey(event: KeyEvent): Boolean {
+        val down = event.action == KeyEvent.ACTION_DOWN
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> { if (!down) closeAnalysis() }
+            KeyEvent.KEYCODE_DPAD_LEFT -> if (down) moveBar(-1)
+            KeyEvent.KEYCODE_DPAD_RIGHT -> if (down) moveBar(1)
+            KeyEvent.KEYCODE_DPAD_UP -> if (down && anChart != 0) { anChart = 0; showSelection() }
+            KeyEvent.KEYCODE_DPAD_DOWN -> if (down && anChart != 1) { anChart = 1; showSelection() }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {}
+            else -> return false
+        }
+        return true
+    }
+
+    private fun moveBar(step: Int) {
+        if (anChart == 0) anWeek = (anWeek + step).coerceIn(0, (weekBars.size - 1).coerceAtLeast(0))
+        else anMonth = (anMonth + step).coerceIn(0, (monthBars.size - 1).coerceAtLeast(0))
+        showSelection()
+    }
+
     private fun loadHistory() {
         if (demo) { history = demoHistory(); fillHistory(); return }
         val specs = apps
         io.execute {
             val h = runCatching { usage.history(specs) }.onFailure { Log.w(TAG, "No history", it) }.getOrNull()
-            main.post { history = h; fillHistory() }
+            main.post { if (h != null) onHistory(h) }
         }
     }
 
-    /** The parts that come straight from the home screen's numbers. */
+    /** New history: "usual" may have changed, so the home line too. */
+    private fun onHistory(h: History) {
+        history = h
+        if (hasUsage) findViewById<TextView>(R.id.perDay).text =
+            weekSentence(apps.sumOf { stats[it.name]?.week ?: 0L } / daysInPeriod())
+        fillAnalysisStats()
+        fillHistory()
+    }
+
+    /** The months the TV has complete records for, up to now. */
+    private fun measuredMonths(): List<PeriodAverage> =
+        history?.months?.dropWhile { it.apps == null }.orEmpty()
+
+    /**
+     * What "usual" means: the average per day over the measured months (now: since June).
+     * Before the history is read, this year's average stands in.
+     */
+    private fun usualPerDay(): Long {
+        val months = measuredMonths()
+        if (months.isNotEmpty()) {
+            val days = months.sumOf { it.days }
+            if (days > 0) return months.sumOf { it.total } / days
+        }
+        return apps.sumOf { stats[it.name]?.year ?: 0L } / Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
+    }
+
+    /** The parts that come straight from the home screen's numbers, plus the measured total. */
     private fun fillAnalysisStats() {
         val a = analysis ?: return
         val week = apps.sumOf { stats[it.name]?.week ?: 0L }
         val month = apps.sumOf { stats[it.name]?.month ?: 0L }
-        val year = apps.sumOf { stats[it.name]?.year ?: 0L }
         val c = Calendar.getInstance()
         a.findViewById<TextView>(R.id.anSentence).text = weekSentence(week / daysInPeriod())
 
         val totals = a.findViewById<LinearLayout>(R.id.anTotals)
         totals.removeAllViews()
-        listOf(
+        val blocks = mutableListOf(
             Triple("THIS WEEK", week, (c.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1),
             Triple(monthFmt.format(c.time).uppercase(en), month, c.get(Calendar.DAY_OF_MONTH)),
-            Triple(c.get(Calendar.YEAR).toString(), year, c.get(Calendar.DAY_OF_YEAR)),
-        ).forEach { (title, total, days) ->
+        )
+        val measured = measuredMonths()
+        if (measured.size > 1) blocks += Triple(
+            "SINCE " + monthFmt.format(Date(measured.first().start)).uppercase(en),
+            measured.sumOf { it.total }, measured.sumOf { it.days },
+        )
+        blocks.forEach { (title, total, days) ->
             totals.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 addView(heading(title))
                 addView(text(UsageRepo.format(total), 30f, Color.WHITE, "sans-serif-light"), lp(top = 6))
-                addView(text("≈ ${UsageRepo.format(total / days)} per day", 13f, GREY), lp(top = 4))
+                addView(text("≈ ${UsageRepo.format(total / days.coerceAtLeast(1))} per day", 13f, GREY), lp(top = 4))
             }, LinearLayout.LayoutParams(dp(200), -2))
-        }
-
-        val list = a.findViewById<LinearLayout>(R.id.anApps)
-        list.removeAllViews()
-        apps.map { it to (stats[it.name]?.year ?: 0L) }.sortedByDescending { it.second }.forEach { (spec, ms) ->
-            val share = if (year > 0) ms.toFloat() / year else 0f
-            list.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(text(spec.name, 13f, Color.WHITE), LinearLayout.LayoutParams(dp(130), -2))
-                addView(
-                    ShareLine(this@MainActivity).apply { setValue(share, Color.parseColor(spec.color)) },
-                    LinearLayout.LayoutParams(dp(360), dp(5)),
-                )
-                addView(text(UsageRepo.format(ms), 13f, Color.WHITE).apply { gravity = Gravity.END },
-                    LinearLayout.LayoutParams(dp(80), -2))
-                addView(text("${Math.round(share * 100)}%", 13f, GREY).apply { gravity = Gravity.END },
-                    LinearLayout.LayoutParams(dp(56), -2))
-            }, lp(top = 3))
         }
     }
 
     private fun fillHistory() {
         val a = analysis ?: return
         val h = history ?: return
+        // A selection on the newest bar stays on the newest bar when the history is refreshed.
+        if (anWeek >= weekBars.size - 1) anWeek = Int.MAX_VALUE
+        if (anMonth >= monthBars.size - 1) anMonth = Int.MAX_VALUE
+        weekBars = h.weeks.dropWhile { it.apps == null && it !== h.weeks.last() }
+        monthBars = measuredMonths().ifEmpty { listOf(h.months.last()) }
+        if (anWeek == Int.MAX_VALUE) anWeek = weekBars.size - 1
+        if (anMonth == Int.MAX_VALUE) anMonth = monthBars.size - 1
+        anWeek = anWeek.coerceIn(0, weekBars.size - 1)
+        anMonth = anMonth.coerceIn(0, monthBars.size - 1)
+
         val usual = usualPerDay()
-        val c = Calendar.getInstance()
-        // This week and this month: the same exact numbers as on the home screen.
-        val weekNow = apps.sumOf { stats[it.name]?.week ?: 0L } / daysInPeriod()
-        val monthNow = apps.sumOf { stats[it.name]?.month ?: 0L } / c.get(Calendar.DAY_OF_MONTH)
         val day = SimpleDateFormat("d MMM", en)
-        // Weeks: leave out the older weeks the TV has no record of.
-        val weeks = h.weeks.dropWhile { it.perDay == null && it !== h.weeks.last() }
+        val mon = SimpleDateFormat("MMM", en)
         a.findViewById<TrendBars>(R.id.anWeeks).setValues(
-            weeks.dropLast(1).map { it.perDay } + weekNow,
-            weeks.mapIndexed { i, w -> if (i == weeks.size - 1) "now" else day.format(Date(w.start)) },
+            weekBars.map { it.perDay },
+            weekBars.mapIndexed { i, w -> if (i == weekBars.size - 1) "this week" else day.format(Date(w.start)) },
             usual,
         )
+        a.findViewById<TrendBars>(R.id.anMonths).setValues(
+            monthBars.map { it.perDay }, monthBars.map { mon.format(Date(it.start)) }, usual,
+        )
         a.findViewById<TextView>(R.id.anWeeksTitle).text =
-            if (weeks.size > 1) "PER DAY, LAST ${weeks.size} WEEKS" else "PER DAY, THIS WEEK"
+            if (weekBars.size > 1) "PER DAY, LAST ${weekBars.size} WEEKS" else "PER DAY, THIS WEEK"
+        a.findViewById<TextView>(R.id.anMonthsTitle).text = "PER DAY, PER MONTH"
+        showSelection()
+    }
 
-        // Months: the TV keeps month records for about half a year. The months before that are
-        // one bar, worked out from the year total minus the months we do have.
-        val mon = SimpleDateFormat("MMM", en)
-        val months = h.months
-        val known = months.indexOfFirst { it.perDay != null }.let { if (it < 0) months.size - 1 else it }
-        val values = mutableListOf<Long?>()
-        val labels = mutableListOf<String>()
-        if (known > 0) {
-            val yearTotal = apps.sumOf { stats[it.name]?.year ?: 0L }
-            val monthTotal = apps.sumOf { stats[it.name]?.month ?: 0L }
-            val later = months.subList(known, months.size - 1).sumOf { it.total } + monthTotal
-            val early = months.subList(0, known)
-            val days = early.sumOf { it.days }
-            val rest = yearTotal - later
-            values += if (rest > 0 && days > 0) rest / days else null
-            labels += if (known == 1) mon.format(Date(early[0].start))
-            else mon.format(Date(early.first().start)) + "–" + mon.format(Date(early.last().start))
+    /** Highlight the chosen bar and list that period per app. */
+    private fun showSelection() {
+        val a = analysis ?: return
+        val weeksChart = a.findViewById<TrendBars>(R.id.anWeeks)
+        val monthsChart = a.findViewById<TrendBars>(R.id.anMonths)
+        weeksChart.select(anWeek, anChart == 0)
+        monthsChart.select(anMonth, anChart == 1)
+
+        val p = (if (anChart == 0) weekBars.getOrNull(anWeek) else monthBars.getOrNull(anMonth)) ?: return
+        val last = if (anChart == 0) anWeek == weekBars.size - 1 else anMonth == monthBars.size - 1
+        val title = when {
+            anChart == 0 && last -> "THIS WEEK"
+            anChart == 0 -> "WEEK OF " + SimpleDateFormat("d MMMM", en).format(Date(p.start)).uppercase(en)
+            last -> monthFmt.format(Date(p.start)).uppercase(en) + " SO FAR"
+            else -> SimpleDateFormat("MMMM yyyy", en).format(Date(p.start)).uppercase(en)
         }
-        months.subList(known, months.size).forEachIndexed { i, m ->
-            values += if (known + i == months.size - 1) monthNow else m.perDay
-            labels += mon.format(Date(m.start))
+        a.findViewById<TextView>(R.id.anAppsTitle).text = "$title PER APP"
+
+        val list = a.findViewById<LinearLayout>(R.id.anApps)
+        list.removeAllViews()
+        val byApp = p.apps.orEmpty()
+        val rows = apps.map { spec -> Triple(spec.name, spec.packages.sumOf { byApp[it] ?: 0L }, Color.parseColor(spec.color)) }
+            .sortedByDescending { it.second }.toMutableList()
+        val listed = apps.flatMap { it.packages }.toSet()
+        val other = byApp.filterKeys { it !in listed && it !in NOT_WATCHING && it != packageName }.values.sum()
+        if (other >= 60_000L) rows += Triple("Other apps", other, 0xFF6A6A6A.toInt())
+        val total = rows.sumOf { it.second }.coerceAtLeast(1L)
+        rows.forEach { (name, ms, color) ->
+            list.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(text(name, 13f, if (name == "Other apps") GREY else Color.WHITE), LinearLayout.LayoutParams(dp(130), -2))
+                addView(ShareLine(this@MainActivity).apply { setValue(ms.toFloat() / total, color) },
+                    LinearLayout.LayoutParams(dp(360), dp(5)))
+                addView(text(UsageRepo.format(ms), 13f, Color.WHITE).apply { gravity = Gravity.END },
+                    LinearLayout.LayoutParams(dp(80), -2))
+                addView(text("≈ ${UsageRepo.format(ms / p.days.coerceAtLeast(1))} a day", 13f, GREY).apply { gravity = Gravity.END },
+                    LinearLayout.LayoutParams(dp(130), -2))
+            }, lp(top = 3))
         }
-        a.findViewById<TrendBars>(R.id.anMonths).setValues(values, labels, usual)
     }
 
     private fun demoHistory(): History {
         val h = 3_600_000L
         val now = System.currentTimeMillis()
-        val weeks = listOf(3.6, 3.2, 3.9, 3.4, 2.9, 3.5, 2.7, 2.0).mapIndexed { i, v ->
-            PeriodAverage(now - (7 - i) * 7 * 24 * h, (v * h).toLong())
-        }
-        val n = Calendar.getInstance().get(Calendar.MONTH) + 1
-        val months = List(n) { i ->
-            val v = if (i < n - 6) null else listOf(2.9, 3.1, 3.8, 3.3, 2.6, 2.4)[i - (n - 6)]
-            val start = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); add(Calendar.MONTH, i - n + 1) }.timeInMillis
-            PeriodAverage(start, v?.let { (it * h).toLong() }, v?.let { (it * h * 30).toLong() } ?: 0L, 30)
-        }
+        val pk = apps.map { it.packages.first() }
+        val mix = listOf(0.45, 0.3, 0.12, 0.08, 0.05)
+        fun p(start: Long, days: Int, perDay: Double?) = PeriodAverage(
+            start, start + days * 24 * h,
+            perDay?.let { v -> pk.mapIndexed { i, k -> k to (v * days * h * mix.getOrElse(i) { 0.0 }).toLong() }.toMap() + ("com.spotify.tv.android" to 2 * h) },
+            days, pk.toSet(),
+        )
+        val weeks = listOf(null, null, null, 3.4, 2.9, 3.5, 2.7, 2.0).mapIndexed { i, v -> p(now - (7 - i) * 7 * 24 * h, 7, v) }
+        val months = listOf(null, null, null, null, null, null, 2.9, 3.1, 3.8, 3.3, 2.6, 2.4)
+            .mapIndexed { i, v -> p(now - (11 - i) * 30L * 24 * h, 30, v) }
         return History(weeks, months)
     }
 
@@ -1073,8 +1140,10 @@ class MainActivity : Activity() {
     companion object {
         private const val TAG = "BankLaunch"
         private const val REQ_BT = 7
-        private val DPAD_KEYS = listOf(
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+        /** Screensaver, home screens and settings: on screen, but not watching. */
+        private val NOT_WATCHING = setOf(
+            "com.google.android.apps.tv.dreamx", "com.google.android.apps.tv.launcherx",
+            "com.google.android.tungsten.setupwraith", "com.android.tv.settings", "com.sony.dtv.settings",
         )
         private val DIM = Color.parseColor("#8A8A8A")
         private val GREY = Color.parseColor("#9A9A9A")
