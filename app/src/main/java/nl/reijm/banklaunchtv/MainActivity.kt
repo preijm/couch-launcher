@@ -862,7 +862,7 @@ class MainActivity : Activity() {
         col.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; id = R.id.anApps },
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         col.addView(Space(this), LinearLayout.LayoutParams(1, 0, 1f))
-        col.addView(text("◀ ▶  choose a bar     ▲ ▼  weeks or months     Back  close", 11f, 0xFF6A6A6A.toInt()))
+        col.addView(text("◀ ▶  choose a bar     ▲ ▼  weeks or months", 11f, 0xFF6A6A6A.toInt()))
 
         anChart = 0
         anWeek = Int.MAX_VALUE
