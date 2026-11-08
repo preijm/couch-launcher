@@ -117,7 +117,8 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
                 val t = short(v)
                 val half = value.measureText(t) / 2
                 val cx = (x + bw / 2).coerceIn(half, width - half)
-                c.drawText(t, cx, barMax - h - 4 * d, value)
+                // Always in the band above the tallest bar, so it never sits on another day's bar.
+                c.drawText(t, cx, valueH - 4 * d, value)
             }
         }
     }
