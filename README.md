@@ -24,22 +24,21 @@ You need a Windows PC with [Android Studio](https://developer.android.com/studio
    scripts/tv.sh home-off     # make it the Home screen (home-on: undo)
    scripts/tv.sh speaker-on   # allow the speaker switch
    scripts/tv.sh keys-on      # YouTube / green / yellow buttons (keys-off: undo)
+   scripts/tv.sh yt-install   # YouTube without ads (see below)
    ```
 4. Your app list and colours: `app/src/main/java/nl/reijm/banklaunchtv/Config.kt`.
 
-Other commands: `scripts/tv.sh` with no arguments lists them all (screenshots, backups, YouTube).
+Other commands: `scripts/tv.sh` with no arguments lists them all (screenshots, backups).
 
 ## Keep these safe
-- **The signing key**, `C:\Users\<you>\.android\debug.keystore`. Everything you install is signed with it. Lose it and updates can't be installed over the apps; you'd have to uninstall them, which wipes the watch-time history and your YouTube sign-in.
+- **The signing key**, `C:\Users\<you>\.android\debug.keystore`. Bank Launch TV is signed with it. Lose it and updates can't be installed over the app; you'd have to uninstall it first, which wipes the watch-time history (restore it from a backup).
 - **Watch time**: `scripts/tv.sh data-backup` copies it from the TV to `backups/` (and to OneDrive if that folder exists, see the script). After a reinstall: `scripts/tv.sh data-restore backups/watch-time-<date>.xml`.
 
 ## YouTube without ads
-The YouTube tile and button open our own build of [TizenTube Cobalt](https://github.com/reisxd/TizenTubeCobalt) (YouTube's TV app without ads). It is the official release with one change: it loads [`youtube/theme.js`](youtube/theme.js) instead of TizenTube's own script. That file sets a few TizenTube settings (black background, no Shorts, updater off), loads the real TizenTube script, and adds the styling.
+The YouTube tile and button open [TizenTube Cobalt](https://github.com/reisxd/TizenTubeCobalt), YouTube's TV app without ads. Install it once; it updates itself after that:
 
 ```bash
-scripts/tizentube.sh      # download the latest release, patch it, sign it with your key
-scripts/tv.sh yt-install  # install it (the first time replaces the official TizenTube; sign in again once)
+scripts/tv.sh yt-install
 ```
 
-- Change the look: edit `youtube/theme.js`, then `scripts/tv.sh yt-publish`, `scripts/tizentube.sh` and `scripts/tv.sh yt-install`. It's served as `t.js` from the public repo [preijm/bank-launch-tv-yt](https://github.com/preijm/bank-launch-tv-yt) via jsDelivr. The build is pinned to one commit of that file, so nothing changes on the TV until you rebuild and reinstall.
-- Without your own copy of that repo you can keep using it as is: `scripts/tizentube.sh` pins the latest `t.js` there.
+In TizenTube's own settings you can turn off Shorts, pick a black background and trim the side menu.

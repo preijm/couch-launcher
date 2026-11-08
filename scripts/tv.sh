@@ -6,8 +6,7 @@
 #   packages       list installed third-party packages
 #   home-off       make Bank Launch TV the Home screen (disables Google TV home only if needed)
 #   home-on        undo: bring the Google TV home back
-#   yt-publish     upload youtube/theme.js (our YouTube look) as t.js; reaches the TV after a rebuild
-#   yt-install     install our TizenTube build (make it with scripts/tizentube.sh)
+#   yt-install     install TizenTube (YouTube without ads, official release from GitHub)
 #   yt-restart     restart YouTube on the TV
 #   speaker-on     let the home screen switch between the Bluetooth speaker and the TV
 #   keys-on        make the remote's YouTube button open our YouTube (keys-off: undo)
@@ -48,19 +47,11 @@ case "${1:-}" in
   home-on)
     for p in "${STOCK_HOME[@]}"; do "$ADB" shell pm enable "$p"; done
     "$ADB" shell input keyevent 3 ;;
-  yt-publish)
-    # Upload youtube/theme.js to the public repo as t.js. The TV is pinned to one commit,
-    # so it only gets this after: scripts/tizentube.sh && scripts/tv.sh yt-install
-    sha=$(gh api repos/preijm/bank-launch-tv-yt/contents/t.js -q .sha 2>/dev/null || true)
-    gh api -X PUT repos/preijm/bank-launch-tv-yt/contents/t.js -f message="${2:-Update the YouTube look}" \
-      -f content="$(base64 -w0 youtube/theme.js)" ${sha:+-f sha="$sha"} -q .commit.sha
-    echo "Published. To put it on the TV: scripts/tizentube.sh && scripts/tv.sh yt-install" ;;
   yt-install)
-    apk=$(ls -t build/tizentube/tizentube-bltv-*.apk | head -1)
-    if ! "$ADB" install -r "$apk"; then
-      echo "Replacing the official TizenTube (different signature; YouTube sign-in is lost once)"
-      "$ADB" uninstall $YT && "$ADB" install "$apk"
-    fi ;;
+    # The official TizenTube Cobalt (YouTube without ads); updates itself after this.
+    mkdir -p build
+    gh release download -R reisxd/TizenTubeCobalt -p cobalt-arm.apk -O build/tizentube.apk --clobber
+    "$ADB" install -r build/tizentube.apk ;;
   yt-restart)
     "$ADB" shell am force-stop $YT; "$ADB" shell monkey -p $YT -c android.intent.category.LAUNCHER 1 >/dev/null ;;
   speaker-on)
@@ -97,5 +88,5 @@ case "${1:-}" in
     "$ADB" shell rm /data/local/tmp/usage_days.xml
     "$ADB" shell am start -n $PKG/.MainActivity >/dev/null
     echo "Restored $2" ;;
-  *) sed -n '2,15p' "$0" ;;
+  *) sed -n '2,14p' "$0" ;;
 esac
