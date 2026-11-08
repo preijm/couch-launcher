@@ -11,7 +11,7 @@
 #   yt-restart     restart YouTube on the TV
 #   speaker-on     let the home screen switch between the Bluetooth speaker and the TV
 #   keys-on        make the remote's YouTube button open our YouTube (keys-off: undo)
-#   data-backup    copy the saved watch time from the TV to backups/ (keep a copy off this PC too)
+#   data-backup    copy the saved watch time from the TV to backups/ and OneDrive
 #   data-restore <file>  put a backup back on the TV (after a reinstall)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -80,7 +80,10 @@ case "${1:-}" in
     mkdir -p backups
     out="backups/watch-time-$(date +%Y-%m-%d).xml"
     "$ADB" exec-out run-as $PKG cat shared_prefs/usage_days.xml > "$out"
-    grep -q '<map' "$out" && echo "Saved $out ($(grep -c 'name="d:' "$out") days)" || { echo "Backup failed"; rm -f "$out"; exit 1; } ;;
+    grep -q '<map' "$out" && echo "Saved $out ($(grep -c 'name="d:' "$out") days)" || { echo "Backup failed"; rm -f "$out"; exit 1; }
+    # A copy off this PC: OneDrive, next to the signing key.
+    od="$USERPROFILE/OneDrive/Documenten/Bank Launch TV backup"
+    [ -d "$od" ] && cp "$out" "$od/" && echo "Copied to OneDrive" ;;
   data-restore)
     export MSYS_NO_PATHCONV=1  # Git Bash: keep /data/... as a TV path
     [ -f "${2:-}" ] || { echo "Usage: scripts/tv.sh data-restore backups/watch-time-<date>.xml"; exit 1; }
