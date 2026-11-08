@@ -851,8 +851,6 @@ class MainActivity : Activity() {
         tabs.addView(text("Weeks", 17f, Color.WHITE).apply { id = R.id.anWeeksTitle })
         tabs.addView(text("Months", 17f, Color.WHITE).apply { id = R.id.anMonthsTitle },
             LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(24) })
-        tabs.addView(text("average per day", 12f, 0xFF6A6A6A.toInt()),
-            LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(24) })
         col.addView(tabs, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(30) })
         col.addView(StackedBars(this).apply { id = R.id.anWeeks },
             LinearLayout.LayoutParams(-1, dp(190)).apply { topMargin = dp(8) })
@@ -1038,7 +1036,7 @@ class MainActivity : Activity() {
         }
         val now = blocks(p)
         val perDay = now.sumOf { it.ms } / p.days.coerceAtLeast(1)
-        a.findViewById<TextView>(R.id.anAppsTitle).text = "$title  ·  ≈ ${UsageRepo.format(perDay)} A DAY"
+        a.findViewById<TextView>(R.id.anAppsTitle).text = "$title     ${UsageRepo.format(perDay)} A DAY"
         a.findViewById<SegmentBar>(R.id.anSplit).setValues(now.map { it.ms to it.color })
 
         // Legend: per app the time per day and the change since the bar before.
@@ -1211,9 +1209,9 @@ class MainActivity : Activity() {
         )
         private val DIM = Color.parseColor("#8A8A8A")
         private val GREY = Color.parseColor("#9A9A9A")
-        private val OTHER = Color.parseColor("#5A5A5A")
-        private val OTHER_1 = Color.parseColor("#8E8E93")
-        private val OTHER_2 = Color.parseColor("#6E6E73")
+        private val OTHER = Color.parseColor("#9B7BFF")
+        private val OTHER_1 = Color.parseColor("#2EC4B6")
+        private val OTHER_2 = Color.parseColor("#E9C46A")
         private val ADD_DIM = Color.parseColor("#4A4A4A")
         private const val NAME_SMALL = 28f
         private const val NAME_BIG = 40f
