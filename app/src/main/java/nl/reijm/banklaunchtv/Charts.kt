@@ -189,7 +189,10 @@ class StackedBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? =
     private val r = RectF()
     private val clip = android.graphics.Path()
 
-    /** [b]: per bar the blocks (time per day, colour), bottom first; null = no record. */
+    /**
+     * [b]: per bar the blocks (time per day, colour), bottom first; null = no record. Labels past
+     * the last bar are periods still to come: a faint empty slot each.
+     */
     fun setData(b: List<List<Pair<Long, Int>>?>, l: List<String>) {
         bars = b; labels = l
         grow(700) { progress = it }
@@ -205,10 +208,19 @@ class StackedBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? =
         val top = 24 * d
         val bottom = height - labelH
         val gap = 16 * d
-        val n = bars.size
+        val n = maxOf(bars.size, labels.size)
         val bw = minOf((width - gap * (n - 1)) / n, 96 * d)
         val max = maxOf(bars.maxOf { b -> b?.sumOf { it.first } ?: 0L }, 30 * 60_000L).toFloat()
 
+        for (i in bars.size until n) {
+            val x = i * (bw + gap)
+            paint.color = 0xFF1E1E1E.toInt()
+            r.set(x, bottom - 1.5f * d, x + bw, bottom)
+            c.drawRect(r, paint)
+            label.textSize = 12 * sp
+            label.color = 0xFF3E3E3E.toInt()
+            c.drawText(labels[i], x + bw / 2, height - 4 * d, label)
+        }
         bars.forEachIndexed { i, b ->
             val x = i * (bw + gap)
             val chosen = i == selected

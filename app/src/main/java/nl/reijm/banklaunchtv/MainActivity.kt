@@ -987,10 +987,22 @@ class MainActivity : Activity() {
                     i == bars.size - 1 -> "this week"
                     else -> day.format(Date(p.start))
                 }
-            },
+            } + upcoming(bars),
         )
         a.findViewById<TextView>(R.id.anWeeksTitle).setTextColor(if (anChart == 0) Color.WHITE else 0xFF5A5A5A.toInt())
         a.findViewById<TextView>(R.id.anMonthsTitle).setTextColor(if (anChart == 1) Color.WHITE else 0xFF5A5A5A.toInt())
+    }
+
+    /** Labels for the weeks or months still to come, so the chart always shows 8 weeks or 12 months. */
+    private fun upcoming(bars: List<PeriodAverage>): List<String> {
+        val last = bars.lastOrNull() ?: return emptyList()
+        val slots = if (anChart == 0) 8 else 12
+        val fmt = SimpleDateFormat(if (anChart == 0) "d MMM" else "MMM", en)
+        return (1..(slots - bars.size).coerceAtLeast(0)).map { k ->
+            val c = Calendar.getInstance().apply { timeInMillis = last.start }
+            if (anChart == 0) c.add(Calendar.DAY_OF_MONTH, 7 * k) else c.add(Calendar.MONTH, k)
+            fmt.format(c.time)
+        }
     }
 
     private class Block(val name: String, val ms: Long, val color: Int)
