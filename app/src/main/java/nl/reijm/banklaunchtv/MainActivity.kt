@@ -368,7 +368,7 @@ class MainActivity : Activity() {
     private fun usualPerDay(): Long =
         apps.sumOf { stats[it.name]?.year ?: 0L } / Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
 
-    /** "≈ 2h 00m per day  ·  ↓ 41% vs usual": short and quiet; within 10% it's "about usual". */
+    /** "≈ 2h 00m per day · down by 41%" compared to usual (this year's average); within 10% "about usual". */
     private fun weekSentence(perDay: Long): CharSequence {
         val usual = usualPerDay()
         val head = "≈ ${UsageRepo.format(perDay)} per day"
@@ -376,10 +376,10 @@ class MainActivity : Activity() {
         val pct = Math.round((perDay - usual) * 100.0 / usual).toInt()
         val cmp = when {
             Math.abs(pct) < 10 -> "about usual"
-            pct < 0 -> "↓ ${-pct}% vs usual"
-            else -> "↑ $pct% vs usual"
+            pct < 0 -> "down by ${-pct}%"
+            else -> "up by $pct%"
         }
-        return "$head  ·  $cmp"
+        return "$head · $cmp"
     }
 
     /** Days so far in the selected period, today included. */
