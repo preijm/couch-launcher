@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Bank Launch TV</string>
+    <string name="remote_keys_label">Bank Launch TV remote buttons</string>
+    <string name="remote_keys_description">Makes the YouTube button on the remote open the YouTube app from the Bank Launch TV home screen.</string>
 </resources>

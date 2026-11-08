@@ -58,6 +58,12 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
         textAlign = Paint.Align.CENTER
         typeface = Typeface.create("sans-serif", Typeface.NORMAL)
     }
+    /** Today's time above its bar: big enough to read from the couch. */
+    private val value = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        color = Color.WHITE
+    }
     private val days = arrayOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
     private val TODAY_MIN = 10 * 60_000L
 
@@ -85,7 +91,8 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
         val d = resources.displayMetrics.density
         text.textSize = 8 * resources.displayMetrics.scaledDensity
         val labelH = 13 * d
-        val valueH = 12 * d // room above the bars for today's value
+        value.textSize = 13 * resources.displayMetrics.scaledDensity
+        val valueH = 18 * d // room above the bars for today's value
         val barMax = height - labelH
         val gap = 5 * d
         val bw = (width - gap * 6) / 7
@@ -106,8 +113,11 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
             c.drawText(days[i], x + bw / 2, height - 2 * d, text)
             // Today's time above its bar, once it's worth mentioning.
             if (i == today && v >= TODAY_MIN && progress > 0.9f) {
-                text.color = Color.WHITE
-                c.drawText(short(v), x + bw / 2, barMax - h - 3 * d, text)
+                // Centred on the bar, but kept inside the chart (Sunday is at the right edge).
+                val t = short(v)
+                val half = value.measureText(t) / 2
+                val cx = (x + bw / 2).coerceIn(half, width - half)
+                c.drawText(t, cx, barMax - h - 4 * d, value)
             }
         }
     }

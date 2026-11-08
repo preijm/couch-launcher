@@ -23,7 +23,8 @@ The YouTube tile opens our own build of [TizenTube Cobalt](https://github.com/re
 It is the official release with one change: it loads [`youtube/theme.js`](youtube/theme.js) instead of TizenTube's own script.
 `theme.js` sets a few TizenTube settings (black background, no Shorts, updater off), loads the real TizenTube script, and adds our styling.
 
-- Change the look: edit `youtube/theme.js`, then `scripts/tv.sh yt-publish` and `scripts/tv.sh yt-restart`.
-  It is served from the public repo [preijm/bank-launch-tv-yt](https://github.com/preijm/bank-launch-tv-yt) via jsDelivr.
+- Change the look: edit `youtube/theme.js`, then `scripts/tv.sh yt-publish`, `scripts/tizentube.sh` and `scripts/tv.sh yt-install`.
+  It is served as `t.js` from the public repo [preijm/bank-launch-tv-yt](https://github.com/preijm/bank-launch-tv-yt) via jsDelivr.
+  The build is pinned to one commit of that file, so nothing changes on the TV until you rebuild and reinstall.
 - New TizenTube version: `scripts/tizentube.sh` (downloads, patches and signs it), then `scripts/tv.sh yt-install`.
   TizenTube's own updater is off, because our build is signed with this PC's debug key.

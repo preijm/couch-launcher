@@ -108,6 +108,11 @@ class MainActivity : Activity() {
     private var replayIntro = false
     private var visible = false
 
+    private lateinit var speakers: Speakers
+    private lateinit var btnSpeaker: View
+    private lateinit var btnSettings: View
+    private lateinit var speakerLabel: TextView
+
     /** Preview mode (am start ... --ez demo true): sample numbers for screenshots off-TV. */
     private val demo get() = intent?.getBooleanExtra("demo", false) == true
 
@@ -151,17 +156,27 @@ class MainActivity : Activity() {
         usage = UsageRepo(this)
         list.layoutTransition = smoothTransition()
 
-        val btnSettings = findViewById<ImageButton>(R.id.btnSettings)
+        btnSettings = findViewById<ImageButton>(R.id.btnSettings)
         val btnInputs = findViewById<ImageButton>(R.id.btnInputs)
         val btnApps = findViewById<ImageButton>(R.id.btnApps)
         listOf(btnSettings, btnInputs, btnApps).forEach { b ->
             b.isFocusableInTouchMode = true
             if (Build.VERSION.SDK_INT >= 26) b.defaultFocusHighlightEnabled = false
-            b.setOnKeyListener(toListOnRight)
+            b.setOnKeyListener(leftButtonKeys)
         }
         btnSettings.setOnClickListener { startSafely(Intent(Settings.ACTION_SETTINGS), "Settings") }
         btnInputs.setOnClickListener { showInputs() }
         btnApps.setOnClickListener { showAllApps() }
+
+        btnSpeaker = findViewById(R.id.btnSpeaker)
+        speakerLabel = findViewById(R.id.speakerLabel)
+        btnSpeaker.isFocusableInTouchMode = true
+        if (Build.VERSION.SDK_INT >= 26) btnSpeaker.defaultFocusHighlightEnabled = false
+        btnSpeaker.setOnKeyListener(leftButtonKeys)
+        btnSpeaker.setOnClickListener { switchSpeaker() }
+        speakers = Speakers(this) { main.post { updateSpeaker() } }
+        if (!demo) speakers.start()
+        updateSpeaker()
 
         buildPeriodSwitch()
         buildList()
@@ -188,6 +203,7 @@ class MainActivity : Activity() {
         visible = true
         updateClock()
         loadStats()
+        updateSpeaker()
         if (launching) { launching = false; root.alpha = 1f; focusRow(current) }
         if (dirty) rebuildList(force = true)
         if (replayIntro && isScreenOn()) { replayIntro = false; closeOverlay(); playIntro() }
@@ -202,6 +218,7 @@ class MainActivity : Activity() {
         unregisterReceiver(tickReceiver)
         unregisterReceiver(screenReceiver)
         unregisterReceiver(packageReceiver)
+        speakers.stop()
         io.shutdownNow()
         super.onDestroy()
     }
@@ -234,9 +251,55 @@ class MainActivity : Activity() {
         } else false
     }
 
+    /** Round buttons: UP goes to the Week/Month/Year switch. */
+    private val leftButtonKeys = View.OnKeyListener { v, code, ev ->
+        if (code == KeyEvent.KEYCODE_DPAD_UP && ev.action == KeyEvent.ACTION_DOWN) {
+            periodButtons.getOrNull(period.ordinal)?.requestFocus(); true
+        } else toListOnRight.onKey(v, code, ev)
+    }
+
+    /** Week/Month/Year: DOWN goes to the round buttons (not across to the app list). */
+    private val periodKeys = View.OnKeyListener { v, code, ev ->
+        if (code == KeyEvent.KEYCODE_DPAD_DOWN && ev.action == KeyEvent.ACTION_DOWN) {
+            btnSettings.requestFocus(); true
+        } else toListOnRight.onKey(v, code, ev)
+    }
+
     private fun register(r: BroadcastReceiver, f: IntentFilter) {
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(r, f, Context.RECEIVER_EXPORTED)
         else registerReceiver(r, f)
+    }
+
+    // ------------------------------------------------------------------ speaker
+
+    /** Show which speaker plays; hidden when there's no Bluetooth speaker to switch to. */
+    private fun updateSpeaker() {
+        if (demo) { btnSpeaker.visibility = View.VISIBLE; speakerLabel.text = "Sonos"; return }
+        btnSpeaker.visibility = if (speakers.available) View.VISIBLE else View.GONE
+        val text = when {
+            !speakers.permitted -> "Speaker"
+            else -> when (speakers.state) {
+                Speakers.State.SPEAKER -> speakers.speakerName
+                Speakers.State.TV -> "TV"
+                Speakers.State.SWITCHING -> "Switching…"
+            }
+        }
+        speakerLabel.text = text
+        btnSpeaker.contentDescription = "Sound plays on $text. Press to switch."
+    }
+
+    private fun switchSpeaker() {
+        if (!speakers.permitted) {
+            if (Build.VERSION.SDK_INT >= 31) requestPermissions(arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT), REQ_BT)
+            return
+        }
+        speakers.toggle()?.let { Toast.makeText(this, it, Toast.LENGTH_LONG).show() }
+        updateSpeaker()
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(code, perms, results)
+        if (code == REQ_BT) { speakers.connectProxy(); updateSpeaker() }
     }
 
     private fun isScreenOn() = (getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
@@ -265,7 +328,7 @@ class MainActivity : Activity() {
                 if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
                 setOnFocusChangeListener { _, has -> if (has) setPeriod(p); stylePeriodButtons() }
                 setOnClickListener { setPeriod(p) }
-                setOnKeyListener(toListOnRight)
+                setOnKeyListener(periodKeys)
             }
             periodButtons += b
             periodBar.addView(b, LinearLayout.LayoutParams(-2, dp(28)).apply { if (p != Period.YEAR) marginEnd = dp(4) })
@@ -445,7 +508,7 @@ class MainActivity : Activity() {
             setOnKeyListener { _, code, ev ->
                 when {
                     ev.action != KeyEvent.ACTION_DOWN -> false
-                    code == KeyEvent.KEYCODE_DPAD_LEFT -> { periodButtons.getOrNull(period.ordinal)?.requestFocus(); true }
+                    code == KeyEvent.KEYCODE_DPAD_LEFT -> { btnSettings.requestFocus(); true }
                     code == KeyEvent.KEYCODE_DPAD_UP -> { focusRow(rows.size - 1); true }
                     code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_RIGHT -> true
                     else -> false
@@ -580,7 +643,7 @@ class MainActivity : Activity() {
         val (monthLabel, month) = stat("MONTH")
         val (yearLabel, year) = stat("YEAR")
         val bars = WeekBars(this)
-        detail.addView(bars, LinearLayout.LayoutParams(0, dp(48), 1.8f))
+        detail.addView(bars, LinearLayout.LayoutParams(0, dp(56), 1.8f))
         view.addView(detail, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16); bottomMargin = dp(4) })
 
         view.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) }
@@ -853,6 +916,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val TAG = "BankLaunch"
+        private const val REQ_BT = 7
         private val DIM = Color.parseColor("#8A8A8A")
         private val ADD_DIM = Color.parseColor("#4A4A4A")
         private const val NAME_SMALL = 28f
