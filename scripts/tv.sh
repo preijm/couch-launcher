@@ -82,7 +82,7 @@ case "${1:-}" in
     "$ADB" exec-out run-as $PKG cat shared_prefs/usage_days.xml > "$out"
     grep -q '<map' "$out" && echo "Saved $out ($(grep -c 'name="d:' "$out") days)" || { echo "Backup failed"; rm -f "$out"; exit 1; }
     # A copy off this PC: OneDrive, next to the signing key.
-    od="$USERPROFILE/OneDrive/Documenten/Bank Launch TV backup"
+    od="$USERPROFILE/OneDrive/Projects/Bank Launch TV/Backups"
     [ -d "$od" ] && cp "$out" "$od/" && echo "Copied to OneDrive" ;;
   data-restore)
     export MSYS_NO_PATHCONV=1  # Git Bash: keep /data/... as a TV path
