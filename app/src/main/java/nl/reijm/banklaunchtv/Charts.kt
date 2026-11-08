@@ -209,12 +209,13 @@ class TrendBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
         line.strokeWidth = 1.2f * d
         line.pathEffect = android.graphics.DashPathEffect(floatArrayOf(4 * d, 4 * d), 0f)
         val labelH = 16 * d
-        val top = 18 * d
+        val top = 20 * d
         val bottom = height - labelH
         val usualW = 44 * d // room on the right for the "usual" label
         val gap = 8 * d
         val n = values.size
-        val bw = (width - usualW - gap * (n - 1)) / n
+        // With only a few bars, keep them bar-shaped instead of stretching them wide.
+        val bw = minOf((width - usualW - gap * (n - 1)) / n, 64 * d)
         val max = maxOf(values.filterNotNull().maxOrNull() ?: 0L, usual, 30 * 60_000L).toFloat()
         fun y(ms: Long) = bottom - (bottom - top) * (ms / max)
 
@@ -237,8 +238,11 @@ class TrendBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = n
             c.drawRoundRect(r, 2 * d, 2 * d, paint)
             label.color = if (last) Color.WHITE else 0xFF8A8A8A.toInt()
             c.drawText(labels.getOrElse(i) { "" }, x + bw / 2, height - 3 * d, label)
-            if (last && v != null && progress > 0.9f) {
+            // Every bar gets its value, so ups and downs are easy to read; now in white.
+            if (v != null && progress > 0.9f) {
                 val t = WeekBarsText.short(v)
+                value.textSize = (if (last) 12 else 10) * sp
+                value.color = if (last) Color.WHITE else 0xFFB0B0B0.toInt()
                 val half = value.measureText(t) / 2
                 c.drawText(t, (x + bw / 2).coerceIn(half, width - usualW - half), bottom - h - 5 * d, value)
             }

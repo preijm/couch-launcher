@@ -20,13 +20,13 @@ class AppStats(
 )
 
 /** Average watch time per day over one week or month; null when Android has no record of it. */
-class PeriodAverage(val start: Long, val perDay: Long?)
+class PeriodAverage(val start: Long, val perDay: Long?, val total: Long = 0L, val days: Int = 1)
 
 /** History for the analysis screen, for the apps in the list together. */
 class History(
     /** The last 8 weeks, oldest first; the last one is this week so far. */
     val weeks: List<PeriodAverage>,
-    /** The last 6 months, oldest first; the last one is this month so far. */
+    /** January up to this month, oldest first; the last one is this month so far. */
     val months: List<PeriodAverage>,
 )
 
@@ -120,23 +120,32 @@ class UsageRepo(private val ctx: Context) {
             val stop = minOf(end, now)
             var fromDays = 0L
             var days = 0
+            var daysWithData = 0
             var d = start
             while (d < stop) {
-                fromDays += dayTotals(d, now).filterKeys { it in pkgs }.values.sum()
+                val all = dayTotals(d, now)
+                if (all.isNotEmpty()) daysWithData++
+                fromDays += all.filterKeys { it in pkgs }.values.sum()
                 days++
                 d = addDays(d, 1)
             }
+            // Android's records must reach back to the start of the period; a record that only
+            // covers its last days would make the whole period look far too quiet.
+            val recordsFrom = usm.queryUsageStats(interval, start, stop)
+                ?.filter { it.lastTimeStamp > start }?.minOfOrNull { it.firstTimeStamp }
+            val covered = stop == now || daysWithData >= minOf(days, days - 2) ||
+                (recordsFrom != null && recordsFrom <= addDays(start, 1))
             val estimate = overlapTotals(interval, start, stop).filterKeys { it in pkgs }.values.sum()
             val total = maxOf(fromDays, estimate)
             days = days.coerceAtLeast(1)
-            return PeriodAverage(start, if (total > 0) total / days else null)
+            return PeriodAverage(start, if (total > 0 && covered) total / days else null, if (covered) total else 0L, days)
         }
 
         val weeks = (7 downTo 0).map { back ->
             val start = addDays(thisWeek, -7 * back)
             average(start, addDays(start, 7), UsageStatsManager.INTERVAL_WEEKLY)
         }
-        val months = (5 downTo 0).map { back ->
+        val months = (cal(today).get(Calendar.MONTH) downTo 0).map { back ->
             val start = cal(thisMonth).apply { add(Calendar.MONTH, -back) }.timeInMillis
             val end = cal(start).apply { add(Calendar.MONTH, 1) }.timeInMillis
             average(start, end, UsageStatsManager.INTERVAL_MONTHLY)
@@ -161,7 +170,11 @@ class UsageRepo(private val ctx: Context) {
         if (!isToday) prefs.getString(key, null)?.let { return decode(it) }
 
         val end = if (isToday) now else addDays(start, 1)
-        val computed = fromEvents(start, end) ?: return emptyMap()
+        val computed = fromEvents(start, end) ?: run {
+            // Older than Android keeps events for: remember that there's nothing, so we don't ask again.
+            if (now - start > 21 * 24 * HOUR) prefs.edit().putString(key, "").apply()
+            return emptyMap()
+        }
         if (!isToday) prefs.edit().putString(key, encode(computed)).apply()
         return computed
     }

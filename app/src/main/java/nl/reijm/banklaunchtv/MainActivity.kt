@@ -236,6 +236,7 @@ class MainActivity : Activity() {
         closeAnalysis()
         closeOverlay()
         focusRow(0)
+        if (intent.getBooleanExtra("analysis", false)) root.post { showAnalysis() }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -339,6 +340,9 @@ class MainActivity : Activity() {
             val s = if (ok) runCatching { usage.load(specs) }
                 .onFailure { Log.w(TAG, "Could not read usage", it) }.getOrDefault(emptyMap()) else emptyMap()
             main.post { if (!isDestroyed) showStats(s, ok) }
+            // Also get the analysis history ready, so its charts are there the moment it opens.
+            val h = if (ok) runCatching { usage.history(specs) }.onFailure { Log.w(TAG, "No history", it) }.getOrNull() else null
+            if (h != null) main.post { history = h; fillHistory() }
         }
     }
 
@@ -820,25 +824,26 @@ class MainActivity : Activity() {
 
         val charts = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         col.addView(charts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) })
-        fun chartBlock(title: String, chartId: Int, endMargin: Int) = LinearLayout(this).apply {
+        fun chartBlock(title: String, titleId: Int, chartId: Int, endMargin: Int) = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            addView(heading(title))
+            addView(heading(title).apply { id = titleId })
             addView(
                 TrendBars(this@MainActivity).apply { id = chartId },
-                LinearLayout.LayoutParams(-1, dp(88)).apply { topMargin = dp(8) },
+                LinearLayout.LayoutParams(-1, dp(132)).apply { topMargin = dp(8) },
             )
             layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(endMargin) }
         }
-        charts.addView(chartBlock("PER DAY, LAST 8 WEEKS", R.id.anWeeks, 48))
-        charts.addView(chartBlock("PER DAY, LAST 6 MONTHS", R.id.anMonths, 0))
+        charts.addView(chartBlock("PER DAY, RECENT WEEKS", R.id.anWeeksTitle, R.id.anWeeks, 48))
+        charts.addView(chartBlock("PER DAY, THIS YEAR", R.id.anMonthsTitle, R.id.anMonths, 0))
 
         col.addView(heading("THIS YEAR PER APP"), lp(top = 22))
         col.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; id = R.id.anApps }, lp(top = 6))
 
         fillAnalysisStats()
+        fillHistory() // ready from the background load; refreshed when that runs again
         a.animate().alpha(1f).setDuration(220).start()
         a.requestFocus()
-        loadHistory()
+        if (history == null) loadHistory()
     }
 
     private fun closeAnalysis() {
@@ -910,15 +915,39 @@ class MainActivity : Activity() {
         val weekNow = apps.sumOf { stats[it.name]?.week ?: 0L } / daysInPeriod()
         val monthNow = apps.sumOf { stats[it.name]?.month ?: 0L } / c.get(Calendar.DAY_OF_MONTH)
         val day = SimpleDateFormat("d MMM", en)
+        // Weeks: leave out the older weeks the TV has no record of.
+        val weeks = h.weeks.dropWhile { it.perDay == null && it !== h.weeks.last() }
         a.findViewById<TrendBars>(R.id.anWeeks).setValues(
-            h.weeks.dropLast(1).map { it.perDay } + weekNow,
-            h.weeks.mapIndexed { i, w -> if (i == h.weeks.size - 1) "now" else day.format(Date(w.start)) },
+            weeks.dropLast(1).map { it.perDay } + weekNow,
+            weeks.mapIndexed { i, w -> if (i == weeks.size - 1) "now" else day.format(Date(w.start)) },
             usual,
         )
+        a.findViewById<TextView>(R.id.anWeeksTitle).text =
+            if (weeks.size > 1) "PER DAY, LAST ${weeks.size} WEEKS" else "PER DAY, THIS WEEK"
+
+        // Months: the TV keeps month records for about half a year. The months before that are
+        // one bar, worked out from the year total minus the months we do have.
         val mon = SimpleDateFormat("MMM", en)
-        a.findViewById<TrendBars>(R.id.anMonths).setValues(
-            h.months.dropLast(1).map { it.perDay } + monthNow, h.months.map { mon.format(Date(it.start)) }, usual,
-        )
+        val months = h.months
+        val known = months.indexOfFirst { it.perDay != null }.let { if (it < 0) months.size - 1 else it }
+        val values = mutableListOf<Long?>()
+        val labels = mutableListOf<String>()
+        if (known > 0) {
+            val yearTotal = apps.sumOf { stats[it.name]?.year ?: 0L }
+            val monthTotal = apps.sumOf { stats[it.name]?.month ?: 0L }
+            val later = months.subList(known, months.size - 1).sumOf { it.total } + monthTotal
+            val early = months.subList(0, known)
+            val days = early.sumOf { it.days }
+            val rest = yearTotal - later
+            values += if (rest > 0 && days > 0) rest / days else null
+            labels += if (known == 1) mon.format(Date(early[0].start))
+            else mon.format(Date(early.first().start)) + "–" + mon.format(Date(early.last().start))
+        }
+        months.subList(known, months.size).forEachIndexed { i, m ->
+            values += if (known + i == months.size - 1) monthNow else m.perDay
+            labels += mon.format(Date(m.start))
+        }
+        a.findViewById<TrendBars>(R.id.anMonths).setValues(values, labels, usual)
     }
 
     private fun demoHistory(): History {
@@ -927,8 +956,11 @@ class MainActivity : Activity() {
         val weeks = listOf(3.6, 3.2, 3.9, 3.4, 2.9, 3.5, 2.7, 2.0).mapIndexed { i, v ->
             PeriodAverage(now - (7 - i) * 7 * 24 * h, (v * h).toLong())
         }
-        val months = listOf(null, 2.9, 3.1, 3.8, 3.3, 2.6).mapIndexed { i, v ->
-            PeriodAverage(now - (5 - i) * 30L * 24 * h, v?.let { (it * h).toLong() })
+        val n = Calendar.getInstance().get(Calendar.MONTH) + 1
+        val months = List(n) { i ->
+            val v = if (i < n - 6) null else listOf(2.9, 3.1, 3.8, 3.3, 2.6, 2.4)[i - (n - 6)]
+            val start = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1); add(Calendar.MONTH, i - n + 1) }.timeInMillis
+            PeriodAverage(start, v?.let { (it * h).toLong() }, v?.let { (it * h * 30).toLong() } ?: 0L, 30)
         }
         return History(weeks, months)
     }
