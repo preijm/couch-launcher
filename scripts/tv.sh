@@ -11,6 +11,8 @@
 #   yt-restart     restart YouTube on the TV
 #   speaker-on     let the home screen switch between the Bluetooth speaker and the TV
 #   keys-on        make the remote's YouTube button open our YouTube (keys-off: undo)
+#   data-backup    copy the saved watch time from the TV to backups/ (keep a copy off this PC too)
+#   data-restore <file>  put a backup back on the TV (after a reinstall)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ADB="${ADB:-$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe}"
@@ -73,5 +75,20 @@ case "${1:-}" in
     new=$(echo "$cur" | tr ':' '\n' | grep -vx "$svc" | paste -sd: - || true)
     "$ADB" shell settings put secure enabled_accessibility_services "${new:-null}"
     echo "YouTube button: back to the TV's own" ;;
-  *) sed -n '2,13p' "$0" ;;
+  data-backup)
+    # The TV keeps only ~10 days of detail; everything older lives in this one file.
+    mkdir -p backups
+    out="backups/watch-time-$(date +%Y-%m-%d).xml"
+    "$ADB" exec-out run-as $PKG cat shared_prefs/usage_days.xml > "$out"
+    grep -q '<map' "$out" && echo "Saved $out ($(grep -c 'name="d:' "$out") days)" || { echo "Backup failed"; rm -f "$out"; exit 1; } ;;
+  data-restore)
+    export MSYS_NO_PATHCONV=1  # Git Bash: keep /data/... as a TV path
+    [ -f "${2:-}" ] || { echo "Usage: scripts/tv.sh data-restore backups/watch-time-<date>.xml"; exit 1; }
+    "$ADB" shell am force-stop $PKG
+    "$ADB" push "$2" /data/local/tmp/usage_days.xml >/dev/null
+    "$ADB" shell "run-as $PKG sh -c 'mkdir -p shared_prefs && cp /data/local/tmp/usage_days.xml shared_prefs/usage_days.xml'"
+    "$ADB" shell rm /data/local/tmp/usage_days.xml
+    "$ADB" shell am start -n $PKG/.MainActivity >/dev/null
+    echo "Restored $2" ;;
+  *) sed -n '2,15p' "$0" ;;
 esac

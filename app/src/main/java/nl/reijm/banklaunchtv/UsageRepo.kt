@@ -69,9 +69,9 @@ class UsageRepo(private val ctx: Context) {
 
     fun load(specs: List<AppSpec>): Map<String, AppStats> {
         // Saved days from an older (wrong) way of counting are thrown away and recounted.
-        if (prefs.getInt("format", 1) != FORMAT) prefs.edit().clear().putInt("format", FORMAT).apply()
         val now = System.currentTimeMillis()
         val today = dayStart(now)
+        if (prefs.getInt("format", 1) != FORMAT) recount(today)
 
         val weekStart = cal(today).apply { set(Calendar.DAY_OF_WEEK, Calendar.MONDAY) }
             .let { if (it.timeInMillis > today) it.apply { add(Calendar.DAY_OF_MONTH, -7) } else it }.timeInMillis
@@ -87,7 +87,11 @@ class UsageRepo(private val ctx: Context) {
             d = addDays(d, 1)
         }
         // Earlier days of this year only exist in what we saved before.
-        val savedYear = savedDays().filter { (day, _) -> day in yearStart until from }
+        val saved = savedDays()
+        val savedYear = saved.filter { (day, _) -> day in yearStart until from }
+        // Once we've saved every day since 1 January, our own count is exact; Android's yearly
+        // record (2 Nov to 2 Nov, spread evenly) would only blur it.
+        val yearExact = saved.filterValues { it.isNotEmpty() }.keys.minOrNull()?.let { it <= yearStart } == true
 
         val monthly = systemTotals(UsageStatsManager.INTERVAL_MONTHLY, monthStart, now)
         val yearly = overlapTotals(UsageStatsManager.INTERVAL_YEARLY, yearStart, now)
@@ -121,7 +125,7 @@ class UsageRepo(private val ctx: Context) {
             spec.name to AppStats(
                 week = maxOf(week, sum(weekly)),
                 month = maxOf(month, sum(monthly)),
-                year = maxOf(year, sum(yearly), month),
+                year = if (yearExact) maxOf(year, month) else maxOf(year, sum(yearly), month),
                 weekDays = weekDays,
                 lastWeekSoFar = lastWeek?.sumOf { sum(it) } ?: -1L,
             )
@@ -325,6 +329,27 @@ class UsageRepo(private val ctx: Context) {
             out[u.packageName] = (out[u.packageName] ?: 0L) + part
         }
         return out
+    }
+
+    /**
+     * After a change in how we count: recount only what the TV can still recount (its last 9 days,
+     * and the weeks and months those fall in). Older days are kept as they are, never thrown away:
+     * Android no longer has them, so throwing them away would lose them for good.
+     */
+    private fun recount(today: Long) {
+        val edit = prefs.edit()
+        val recent = addDays(today, -9)
+        prefs.all.keys.forEach { k ->
+            val day = runCatching { keyFmt.parse(k.substring(2))?.time }.getOrNull() ?: return@forEach
+            val drop = when {
+                k.startsWith("d:") -> day >= recent
+                k.startsWith("w:") -> addDays(day, 7) > recent
+                k.startsWith("m:") -> cal(day).apply { add(Calendar.MONTH, 1) }.timeInMillis > recent
+                else -> false
+            }
+            if (drop) edit.remove(k)
+        }
+        edit.putInt("format", FORMAT).apply()
     }
 
     private fun savedDays(): Map<Long, Map<String, Long>> =
