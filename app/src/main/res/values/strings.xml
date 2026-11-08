@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Bank Launch TV</string>
-    <string name="remote_keys_label">Bank Launch TV remote buttons</string>
-    <string name="remote_keys_description">Makes the remote open the Bank Launch TV apps: the YouTube button opens our YouTube, green opens NOS and yellow opens NPO Start.</string>
+    <string name="app_name">Couch Launcher</string>
+    <string name="remote_keys_label">Couch Launcher remote buttons</string>
+    <string name="remote_keys_description">Makes the remote open the Couch Launcher apps: the YouTube button opens our YouTube, green opens NOS and yellow opens NPO Start.</string>
 </resources>

@@ -1,6 +1,6 @@
-# Bank Launch TV
+# Couch Launcher
 
-A calm home screen (launcher) for a Sony BRAVIA with Google TV (Android TV OS 12). No ads, no recommendation rows: just a clock, your few favourite apps and how much you watch. It's the screen you start from on the couch (de bank).
+A calm home screen (launcher) for a Sony BRAVIA with Google TV (Android TV OS 12). No ads, no recommendation rows: just a clock, your few favourite apps and how much you watch. It's the screen you start from on the couch, and it was mostly built from there too: by voice, watching the home screen change.
 
 It's a native Android app (Kotlin, no extra libraries), installed over the network with adb. The TV doesn't need to be rooted.
 
@@ -31,7 +31,7 @@ You need a Windows PC with [Android Studio](https://developer.android.com/studio
 Other commands: `scripts/tv.sh` with no arguments lists them all (screenshots, backups).
 
 ## Keep these safe
-- **The signing key**, `C:\Users\<you>\.android\debug.keystore`. Bank Launch TV is signed with it. Lose it and updates can't be installed over the app; you'd have to uninstall it first, which wipes the watch-time history (restore it from a backup).
+- **The signing key**, `C:\Users\<you>\.android\debug.keystore`. Couch Launcher is signed with it. Lose it and updates can't be installed over the app; you'd have to uninstall it first, which wipes the watch-time history (restore it from a backup).
 - **Watch time**: `scripts/tv.sh data-backup` copies it from the TV to `backups/` (and to OneDrive if that folder exists, see the script). After a reinstall: `scripts/tv.sh data-restore backups/watch-time-<date>.xml`.
 
 ## YouTube without ads

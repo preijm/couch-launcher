@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "bank-launch-tv"
+rootProject.name = "couch-launcher"
 include(":app")

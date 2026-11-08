@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Helper for Bank Launch TV. Usage: scripts/tv.sh <command>
+# Helper for Couch Launcher. Usage: scripts/tv.sh <command>
 #   connect <ip>   connect adb to the TV over the network (port 5555) and remember it
 #   deploy         build debug APK, install and open it
 #   shot [file]    screenshot the TV to shots/
 #   packages       list installed third-party packages
-#   home-off       make Bank Launch TV the Home screen (disables Google TV home only if needed)
+#   home-off       make Couch Launcher the Home screen (disables Google TV home only if needed)
 #   home-on        undo: bring the Google TV home back
 #   yt-install     install TizenTube (YouTube without ads, official release from GitHub)
 #   yt-restart     restart YouTube on the TV
@@ -43,7 +43,7 @@ case "${1:-}" in
       "$ADB" shell pm disable-user --user 0 "$p"
       "$ADB" shell input keyevent 3; sleep 3
     done
-    is_ours && echo "Bank Launch TV is now the Home screen." || { echo "Not switched:"; top; } ;;
+    is_ours && echo "Couch Launcher is now the Home screen." || { echo "Not switched:"; top; } ;;
   home-on)
     for p in "${STOCK_HOME[@]}"; do "$ADB" shell pm enable "$p"; done
     "$ADB" shell input keyevent 3 ;;
@@ -77,7 +77,7 @@ case "${1:-}" in
     "$ADB" exec-out run-as $PKG cat shared_prefs/usage_days.xml > "$out"
     grep -q '<map' "$out" && echo "Saved $out ($(grep -c 'name="d:' "$out") days)" || { echo "Backup failed"; rm -f "$out"; exit 1; }
     # A copy off this PC: OneDrive, next to the signing key.
-    od="$USERPROFILE/OneDrive/Projects/Bank Launch TV/Backups"
+    od="$USERPROFILE/OneDrive/Projects/Couch Launcher/Backups"
     [ -d "$od" ] && cp "$out" "$od/" && echo "Copied to OneDrive" ;;
   data-restore)
     export MSYS_NO_PATHCONV=1  # Git Bash: keep /data/... as a TV path
