@@ -172,3 +172,88 @@ class LetterIcon(private val letter: String) : android.graphics.drawable.Drawabl
     @Deprecated("Deprecated in Java")
     override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
 }
+
+/**
+ * Average per day for a row of weeks or months, oldest first: grey bars, the last one (now) in
+ * white with its value, and a dashed line for "usual". Missing periods show as a thin stub.
+ */
+class TrendBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = 0xFF8A8A8A.toInt()
+    }
+    private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private val value = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        color = Color.WHITE
+    }
+    private var values = listOf<Long?>()
+    private var labels = listOf<String>()
+    private var usual = 0L
+    private var progress = 1f
+    private val r = RectF()
+
+    fun setValues(v: List<Long?>, l: List<String>, usualPerDay: Long) {
+        values = v; labels = l; usual = usualPerDay
+        grow(700) { progress = it }
+    }
+
+    override fun onDraw(c: Canvas) {
+        if (values.isEmpty()) return
+        val d = resources.displayMetrics.density
+        val sp = resources.displayMetrics.scaledDensity
+        label.textSize = 10 * sp
+        value.textSize = 12 * sp
+        line.strokeWidth = 1.2f * d
+        line.pathEffect = android.graphics.DashPathEffect(floatArrayOf(4 * d, 4 * d), 0f)
+        val labelH = 16 * d
+        val top = 18 * d
+        val bottom = height - labelH
+        val usualW = 44 * d // room on the right for the "usual" label
+        val gap = 8 * d
+        val n = values.size
+        val bw = (width - usualW - gap * (n - 1)) / n
+        val max = maxOf(values.filterNotNull().maxOrNull() ?: 0L, usual, 30 * 60_000L).toFloat()
+        fun y(ms: Long) = bottom - (bottom - top) * (ms / max)
+
+        // The "usual" line first, so the bars sit on top of it.
+        if (usual > 0) {
+            val uy = y(usual)
+            c.drawLine(0f, uy, width - usualW + 4 * d, uy, line)
+            label.color = 0xFF9A9A9A.toInt()
+            label.textAlign = Paint.Align.LEFT
+            c.drawText("usual", width - usualW + 8 * d, uy + 3.5f * d, label)
+            label.textAlign = Paint.Align.CENTER
+        }
+
+        values.forEachIndexed { i, v ->
+            val x = i * (bw + gap)
+            val last = i == n - 1
+            val h = if (v == null) 1.5f * d else ((bottom - y(v)) * progress).coerceAtLeast(2 * d)
+            paint.color = when { v == null -> 0xFF2A2A2A.toInt(); last -> Color.WHITE; else -> 0xFF3E3E3E.toInt() }
+            r.set(x, bottom - h, x + bw, bottom)
+            c.drawRoundRect(r, 2 * d, 2 * d, paint)
+            label.color = if (last) Color.WHITE else 0xFF8A8A8A.toInt()
+            c.drawText(labels.getOrElse(i) { "" }, x + bw / 2, height - 3 * d, label)
+            if (last && v != null && progress > 0.9f) {
+                val t = WeekBarsText.short(v)
+                val half = value.measureText(t) / 2
+                c.drawText(t, (x + bw / 2).coerceIn(half, width - usualW - half), bottom - h - 5 * d, value)
+            }
+        }
+    }
+}
+
+/** Short times for chart labels: "35m", "1h 20m", "2h". */
+object WeekBarsText {
+    fun short(ms: Long): String {
+        val m = (ms + 30_000) / 60_000
+        return when {
+            m < 60 -> "${m}m"
+            m % 60 == 0L -> "${m / 60}h"
+            else -> "${m / 60}h ${m % 60}m"
+        }
+    }
+}

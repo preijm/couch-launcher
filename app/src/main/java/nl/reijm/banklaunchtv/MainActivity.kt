@@ -37,6 +37,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -82,7 +85,7 @@ class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var left: View
     private lateinit var list: LinearLayout
-    private lateinit var periodBar: LinearLayout
+    private lateinit var weekCard: View
     private lateinit var overlay: FrameLayout
     private lateinit var panelTitle: TextView
     private lateinit var panelBody: LinearLayout
@@ -92,8 +95,8 @@ class MainActivity : Activity() {
     /** The apps in the list, as set from the TV (see [AppList]). */
     private var apps: List<AppSpec> = emptyList()
     private var addRow: View? = null
-    private val periodButtons = mutableListOf<TextView>()
-    private var period = Period.WEEK
+    /** The home screen always shows this week; month and year are on the cards and in the analysis. */
+    private val period = Period.WEEK
     private var current = 0
     private var stats: Map<String, AppStats> = emptyMap()
     private var hasUsage = false
@@ -148,7 +151,7 @@ class MainActivity : Activity() {
         root = findViewById(R.id.root)
         left = findViewById(R.id.left)
         list = findViewById(R.id.list)
-        periodBar = findViewById(R.id.period)
+        weekCard = findViewById(R.id.weekCard)
         overlay = findViewById(R.id.overlay)
         panelTitle = findViewById(R.id.panelTitle)
         panelBody = findViewById(R.id.panelBody)
@@ -178,7 +181,11 @@ class MainActivity : Activity() {
         if (!demo) speakers.start()
         updateSpeaker()
 
-        buildPeriodSwitch()
+        weekCard.isFocusableInTouchMode = true
+        if (Build.VERSION.SDK_INT >= 26) weekCard.defaultFocusHighlightEnabled = false
+        weekCard.setOnKeyListener(weekCardKeys)
+        weekCard.setOnFocusChangeListener { _, has -> findViewById<View>(R.id.weekHint).visibility = if (has) View.VISIBLE else View.GONE }
+        weekCard.setOnClickListener { showAnalysis() }
         buildList()
         updateClock()
         register(tickReceiver, IntentFilter(Intent.ACTION_TIME_TICK).apply {
@@ -193,6 +200,8 @@ class MainActivity : Activity() {
         })
         playIntro()
         // adb shell am start -n nl.reijm.banklaunchtv/.MainActivity --ez topApps true; adb logcat -s BankLaunch
+        // adb shell am start -n nl.reijm.banklaunchtv/.MainActivity --ez analysis true
+        if (intent?.getBooleanExtra("analysis", false) == true) root.post { showAnalysis() }
         if (intent?.getBooleanExtra("topApps", false) == true) io.execute {
             usage.topApps().take(25).forEach { (pkg, ms) -> Log.i(TAG, "top ${UsageRepo.format(ms)}  $pkg") }
         }
@@ -227,11 +236,19 @@ class MainActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        closeAnalysis()
         closeOverlay()
         focusRow(0)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (analysis != null) {
+            val close = event.keyCode in listOf(
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_ESCAPE,
+            )
+            if (close && event.action == KeyEvent.ACTION_UP) closeAnalysis()
+            return close || event.keyCode in DPAD_KEYS || super.dispatchKeyEvent(event)
+        }
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_UP) {
                 if (overlay.visibility == View.VISIBLE) closeOverlay()
@@ -251,18 +268,21 @@ class MainActivity : Activity() {
         } else false
     }
 
-    /** Round buttons: UP goes to the Week/Month/Year switch. */
+    /** Round buttons: UP goes to the week card. */
     private val leftButtonKeys = View.OnKeyListener { v, code, ev ->
         if (code == KeyEvent.KEYCODE_DPAD_UP && ev.action == KeyEvent.ACTION_DOWN) {
-            periodButtons.getOrNull(period.ordinal)?.requestFocus(); true
+            weekCard.requestFocus(); true
         } else toListOnRight.onKey(v, code, ev)
     }
 
-    /** Week/Month/Year: DOWN goes to the round buttons (not across to the app list). */
-    private val periodKeys = View.OnKeyListener { v, code, ev ->
-        if (code == KeyEvent.KEYCODE_DPAD_DOWN && ev.action == KeyEvent.ACTION_DOWN) {
-            btnSettings.requestFocus(); true
-        } else toListOnRight.onKey(v, code, ev)
+    /** Week card: DOWN goes to the round buttons, UP stays (nothing above it to select). */
+    private val weekCardKeys = View.OnKeyListener { v, code, ev ->
+        when {
+            ev.action != KeyEvent.ACTION_DOWN -> false
+            code == KeyEvent.KEYCODE_DPAD_DOWN -> { btnSettings.requestFocus(); true }
+            code == KeyEvent.KEYCODE_DPAD_UP -> true
+            else -> toListOnRight.onKey(v, code, ev)
+        }
     }
 
     private fun register(r: BroadcastReceiver, f: IntentFilter) {
@@ -312,71 +332,6 @@ class MainActivity : Activity() {
         findViewById<TextView>(R.id.date).text = dateFmt.format(now)
     }
 
-    /** Week / Month / Year: moving onto an option selects it, like tabs. */
-    private fun buildPeriodSwitch() {
-        periodBar.removeAllViews()
-        periodButtons.clear()
-        Period.values().forEach { p ->
-            val b = TextView(this).apply {
-                text = p.button
-                gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
-                setPadding(dp(14), 0, dp(14), 0)
-                isFocusable = true
-                isFocusableInTouchMode = true
-                isClickable = true
-                if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
-                setOnFocusChangeListener { _, has -> if (has) setPeriod(p); stylePeriodButtons() }
-                setOnClickListener { setPeriod(p) }
-                setOnKeyListener(periodKeys)
-            }
-            periodButtons += b
-            periodBar.addView(b, LinearLayout.LayoutParams(-2, dp(28)).apply { if (p != Period.YEAR) marginEnd = dp(4) })
-        }
-        stylePeriodButtons()
-    }
-
-    private fun setPeriod(p: Period) {
-        if (period == p) return
-        period = p
-        stylePeriodButtons()
-        showStats(stats, hasUsage)
-    }
-
-    /**
-     * Two clearly different looks, so you can see when you're on the switch:
-     * not on it: the chosen period is a quiet grey pill; on it: a bright white pill, slightly bigger.
-     */
-    private fun stylePeriodButtons() {
-        val active = periodButtons.any { it.isFocused }
-        periodButtons.forEachIndexed { i, b ->
-            val selected = Period.values()[i] == period
-            b.background = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(
-                    when {
-                        selected && active -> Color.WHITE
-                        selected -> 0xFF2E2E2E.toInt()
-                        else -> Color.TRANSPARENT
-                    },
-                )
-            }
-            b.setTextColor(
-                when {
-                    selected && active -> Color.BLACK
-                    selected -> Color.WHITE
-                    active -> 0xFFD0D0D0.toInt()
-                    else -> 0xFF8A8A8A.toInt()
-                },
-            )
-            b.typeface = Typeface.create(if (selected) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
-        }
-        periodBar.pivotX = 0f
-        periodBar.pivotY = periodBar.height / 2f
-        periodBar.animate().scaleX(if (active) 1.12f else 1f).scaleY(if (active) 1.12f else 1f)
-            .setDuration(180).setInterpolator(DecelerateInterpolator()).start()
-    }
-
     // ------------------------------------------------------------------ stats
 
     private fun loadStats() {
@@ -407,8 +362,29 @@ class MainActivity : Activity() {
             if (ok) apps.mapIndexed { i, a -> values[i] to Color.parseColor(a.color) } else emptyList(),
         )
         findViewById<TextView>(R.id.perDay).text =
-            if (ok) "≈ ${UsageRepo.format(total / daysInPeriod())} per day" else "Watch time not available yet"
+            if (ok) weekSentence(total / daysInPeriod()) else "Watch time not available yet"
         rows.forEach { fillRow(it) }
+        if (analysis != null) fillAnalysisStats()
+    }
+
+    /** Average per day this year, for the apps in the list: what "usual" means. */
+    private fun usualPerDay(): Long =
+        apps.sumOf { stats[it.name]?.year ?: 0L } / Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
+
+    /** "≈ 2h 00m per day, 1h 25m less than usual", with the comparison in white. */
+    private fun weekSentence(perDay: Long): CharSequence {
+        val usual = usualPerDay()
+        val head = "≈ ${UsageRepo.format(perDay)} per day"
+        if (usual <= 0) return head
+        val diff = perDay - usual
+        val cmp = when {
+            Math.abs(diff) < maxOf(10 * 60_000L, usual / 10) -> "about your usual"
+            diff < 0 -> "${WeekBarsText.short(-diff)} less than usual"
+            else -> "${WeekBarsText.short(diff)} more than usual"
+        }
+        return SpannableString("$head, $cmp").apply {
+            setSpan(ForegroundColorSpan(Color.WHITE), head.length + 2, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
     /** Days so far in the selected period, today included. */
@@ -478,7 +454,7 @@ class MainActivity : Activity() {
             r.view.setOnKeyListener { _, code, ev ->
                 when {
                     ev.action != KeyEvent.ACTION_DOWN -> false
-                    code == KeyEvent.KEYCODE_DPAD_LEFT -> { periodButtons.getOrNull(period.ordinal)?.requestFocus(); true }
+                    code == KeyEvent.KEYCODE_DPAD_LEFT -> { weekCard.requestFocus(); true }
                     // Last app: down goes to "Add app" (or nowhere), never across to the left side.
                     code == KeyEvent.KEYCODE_DPAD_DOWN && i == apps.size - 1 -> { focusAddRow(); true }
                     else -> false
@@ -821,6 +797,159 @@ class MainActivity : Activity() {
         return frame
     }
 
+    // ------------------------------------------------------------------ analysis
+
+    /** Full-screen "your TV time": the week sentence, totals, trends and the year per app. */
+    private var analysis: FrameLayout? = null
+    private var history: History? = null
+
+    private fun showAnalysis() {
+        if (analysis != null) return
+        val a = FrameLayout(this).apply {
+            setBackgroundColor(Color.BLACK)
+            isFocusable = true
+            isFocusableInTouchMode = true
+            if (Build.VERSION.SDK_INT >= 26) defaultFocusHighlightEnabled = false
+            alpha = 0f
+        }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        a.addView(col, FrameLayout.LayoutParams(-1, -1).apply { setMargins(dp(64), dp(40), dp(64), dp(28)) })
+        root.addView(a, FrameLayout.LayoutParams(-1, -1))
+        analysis = a
+
+        col.addView(text("Your TV time", 30f, Color.WHITE, "sans-serif-light"))
+        col.addView(text("", 15f, GREY).apply { id = R.id.anSentence }, lp(top = 8))
+
+        val totals = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; id = R.id.anTotals }
+        col.addView(totals, lp(top = 22))
+
+        val charts = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        col.addView(charts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) })
+        fun chartBlock(title: String, chartId: Int, endMargin: Int) = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(heading(title))
+            addView(
+                TrendBars(this@MainActivity).apply { id = chartId },
+                LinearLayout.LayoutParams(-1, dp(88)).apply { topMargin = dp(8) },
+            )
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(endMargin) }
+        }
+        charts.addView(chartBlock("PER DAY, LAST 8 WEEKS", R.id.anWeeks, 48))
+        charts.addView(chartBlock("PER DAY, LAST 6 MONTHS", R.id.anMonths, 0))
+
+        col.addView(heading("THIS YEAR PER APP"), lp(top = 22))
+        col.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; id = R.id.anApps }, lp(top = 6))
+
+        fillAnalysisStats()
+        a.animate().alpha(1f).setDuration(220).start()
+        a.requestFocus()
+        loadHistory()
+    }
+
+    private fun closeAnalysis() {
+        val a = analysis ?: return
+        analysis = null
+        a.animate().alpha(0f).setDuration(160).withEndAction { root.removeView(a) }.start()
+        weekCard.requestFocus()
+    }
+
+    private fun loadHistory() {
+        if (demo) { history = demoHistory(); fillHistory(); return }
+        val specs = apps
+        io.execute {
+            val h = runCatching { usage.history(specs) }.onFailure { Log.w(TAG, "No history", it) }.getOrNull()
+            main.post { history = h; fillHistory() }
+        }
+    }
+
+    /** The parts that come straight from the home screen's numbers. */
+    private fun fillAnalysisStats() {
+        val a = analysis ?: return
+        val week = apps.sumOf { stats[it.name]?.week ?: 0L }
+        val month = apps.sumOf { stats[it.name]?.month ?: 0L }
+        val year = apps.sumOf { stats[it.name]?.year ?: 0L }
+        val c = Calendar.getInstance()
+        a.findViewById<TextView>(R.id.anSentence).text = weekSentence(week / daysInPeriod())
+
+        val totals = a.findViewById<LinearLayout>(R.id.anTotals)
+        totals.removeAllViews()
+        listOf(
+            Triple("THIS WEEK", week, (c.get(Calendar.DAY_OF_WEEK) + 5) % 7 + 1),
+            Triple(monthFmt.format(c.time).uppercase(en), month, c.get(Calendar.DAY_OF_MONTH)),
+            Triple(c.get(Calendar.YEAR).toString(), year, c.get(Calendar.DAY_OF_YEAR)),
+        ).forEach { (title, total, days) ->
+            totals.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(heading(title))
+                addView(text(UsageRepo.format(total), 30f, Color.WHITE, "sans-serif-light"), lp(top = 6))
+                addView(text("≈ ${UsageRepo.format(total / days)} per day", 13f, GREY), lp(top = 4))
+            }, LinearLayout.LayoutParams(dp(200), -2))
+        }
+
+        val list = a.findViewById<LinearLayout>(R.id.anApps)
+        list.removeAllViews()
+        apps.map { it to (stats[it.name]?.year ?: 0L) }.sortedByDescending { it.second }.forEach { (spec, ms) ->
+            val share = if (year > 0) ms.toFloat() / year else 0f
+            list.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(text(spec.name, 13f, Color.WHITE), LinearLayout.LayoutParams(dp(130), -2))
+                addView(
+                    ShareLine(this@MainActivity).apply { setValue(share, Color.parseColor(spec.color)) },
+                    LinearLayout.LayoutParams(dp(360), dp(5)),
+                )
+                addView(text(UsageRepo.format(ms), 13f, Color.WHITE).apply { gravity = Gravity.END },
+                    LinearLayout.LayoutParams(dp(80), -2))
+                addView(text("${Math.round(share * 100)}%", 13f, GREY).apply { gravity = Gravity.END },
+                    LinearLayout.LayoutParams(dp(56), -2))
+            }, lp(top = 3))
+        }
+    }
+
+    private fun fillHistory() {
+        val a = analysis ?: return
+        val h = history ?: return
+        val usual = usualPerDay()
+        val c = Calendar.getInstance()
+        // This week and this month: the same exact numbers as on the home screen.
+        val weekNow = apps.sumOf { stats[it.name]?.week ?: 0L } / daysInPeriod()
+        val monthNow = apps.sumOf { stats[it.name]?.month ?: 0L } / c.get(Calendar.DAY_OF_MONTH)
+        val day = SimpleDateFormat("d MMM", en)
+        a.findViewById<TrendBars>(R.id.anWeeks).setValues(
+            h.weeks.dropLast(1).map { it.perDay } + weekNow,
+            h.weeks.mapIndexed { i, w -> if (i == h.weeks.size - 1) "now" else day.format(Date(w.start)) },
+            usual,
+        )
+        val mon = SimpleDateFormat("MMM", en)
+        a.findViewById<TrendBars>(R.id.anMonths).setValues(
+            h.months.dropLast(1).map { it.perDay } + monthNow, h.months.map { mon.format(Date(it.start)) }, usual,
+        )
+    }
+
+    private fun demoHistory(): History {
+        val h = 3_600_000L
+        val now = System.currentTimeMillis()
+        val weeks = listOf(3.6, 3.2, 3.9, 3.4, 2.9, 3.5, 2.7, 2.0).mapIndexed { i, v ->
+            PeriodAverage(now - (7 - i) * 7 * 24 * h, (v * h).toLong())
+        }
+        val months = listOf(null, 2.9, 3.1, 3.8, 3.3, 2.6).mapIndexed { i, v ->
+            PeriodAverage(now - (5 - i) * 30L * 24 * h, v?.let { (it * h).toLong() })
+        }
+        return History(weeks, months)
+    }
+
+    private fun text(t: String, sp: Float, color: Int, family: String = "sans-serif") = TextView(this).apply {
+        text = t
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+        setTextColor(color)
+        typeface = Typeface.create(family, Typeface.NORMAL)
+        includeFontPadding = false
+    }
+
+    private fun heading(t: String) = text(t, 11f, GREY, "sans-serif-medium").apply { letterSpacing = 0.14f }
+
+    private fun lp(top: Int) = LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(top) }
+
     private fun showPanel(title: String, items: List<Pair<String, () -> Unit>>) {
         panelTitle.text = title
         panelBody.removeAllViews()
@@ -917,7 +1046,11 @@ class MainActivity : Activity() {
     companion object {
         private const val TAG = "BankLaunch"
         private const val REQ_BT = 7
+        private val DPAD_KEYS = listOf(
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+        )
         private val DIM = Color.parseColor("#8A8A8A")
+        private val GREY = Color.parseColor("#9A9A9A")
         private val ADD_DIM = Color.parseColor("#4A4A4A")
         private const val NAME_SMALL = 28f
         private const val NAME_BIG = 40f

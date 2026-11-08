@@ -19,6 +19,17 @@ class AppStats(
     val weekDays: LongArray,
 )
 
+/** Average watch time per day over one week or month; null when Android has no record of it. */
+class PeriodAverage(val start: Long, val perDay: Long?)
+
+/** History for the analysis screen, for the apps in the list together. */
+class History(
+    /** The last 8 weeks, oldest first; the last one is this week so far. */
+    val weeks: List<PeriodAverage>,
+    /** The last 6 months, oldest first; the last one is this month so far. */
+    val months: List<PeriodAverage>,
+)
+
 /**
  * Reads how long apps were in front, from Android's usage records.
  *
@@ -90,6 +101,47 @@ class UsageRepo(private val ctx: Context) {
                 weekDays = weekDays,
             )
         }
+    }
+
+    /**
+     * Average per day for recent weeks and months. Uses our saved days where we have them and
+     * Android's weekly/monthly records otherwise (those don't line up with calendar weeks, so
+     * that part is an estimate). Android keeps weekly records for about a month.
+     */
+    fun history(specs: List<AppSpec>): History {
+        val pkgs = specs.flatMap { it.packages }.toSet()
+        val now = System.currentTimeMillis()
+        val today = dayStart(now)
+        val thisWeek = cal(today).apply { set(Calendar.DAY_OF_WEEK, Calendar.MONDAY) }
+            .let { if (it.timeInMillis > today) it.apply { add(Calendar.DAY_OF_MONTH, -7) } else it }.timeInMillis
+        val thisMonth = cal(today).apply { set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+
+        fun average(start: Long, end: Long, interval: Int): PeriodAverage {
+            val stop = minOf(end, now)
+            var fromDays = 0L
+            var days = 0
+            var d = start
+            while (d < stop) {
+                fromDays += dayTotals(d, now).filterKeys { it in pkgs }.values.sum()
+                days++
+                d = addDays(d, 1)
+            }
+            val estimate = overlapTotals(interval, start, stop).filterKeys { it in pkgs }.values.sum()
+            val total = maxOf(fromDays, estimate)
+            days = days.coerceAtLeast(1)
+            return PeriodAverage(start, if (total > 0) total / days else null)
+        }
+
+        val weeks = (7 downTo 0).map { back ->
+            val start = addDays(thisWeek, -7 * back)
+            average(start, addDays(start, 7), UsageStatsManager.INTERVAL_WEEKLY)
+        }
+        val months = (5 downTo 0).map { back ->
+            val start = cal(thisMonth).apply { add(Calendar.MONTH, -back) }.timeInMillis
+            val end = cal(start).apply { add(Calendar.MONTH, 1) }.timeInMillis
+            average(start, end, UsageStatsManager.INTERVAL_MONTHLY)
+        }
+        return History(weeks, months)
     }
 
     /** Every app's time this year, most watched first (for finding apps missing from the list). */
@@ -180,6 +232,7 @@ class UsageRepo(private val ctx: Context) {
      * inside [periodStart, now]. Assumes watching was spread evenly over the bucket: an estimate.
      */
     private fun overlapTotals(interval: Int, periodStart: Long, now: Long): Map<String, Long> {
+        // [now] is the end of the period (usually the current time).
         val out = HashMap<String, Long>()
         usm.queryUsageStats(interval, periodStart, now)?.forEach { u ->
             val span = u.lastTimeStamp - u.firstTimeStamp

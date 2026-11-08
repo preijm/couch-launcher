@@ -7,7 +7,7 @@
     android:background="@color/base"
     android:clipChildren="false">
 
-    <!-- Left: time, period switch, total, buttons. 1920x1080 design / 2 = dp. -->
+    <!-- Left: time, this week, buttons. 1920x1080 design / 2 = dp. -->
     <LinearLayout
         android:id="@+id/left"
         android:layout_width="280dp"
@@ -41,19 +41,23 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
+        <!-- This week, as a card: OK opens the analysis. Pulled left by its padding so the text lines up. -->
         <LinearLayout
-            android:id="@+id/period"
-            android:layout_width="wrap_content"
+            android:id="@+id/weekCard"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/period_bg"
-            android:orientation="horizontal"
-            android:padding="3dp" />
+            android:layout_marginStart="-16dp"
+            android:layout_marginEnd="-16dp"
+            android:background="@drawable/week_card_bg"
+            android:clickable="true"
+            android:focusable="true"
+            android:orientation="vertical"
+            android:padding="16dp">
 
         <TextView
             android:id="@+id/totalLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
             android:fontFamily="sans-serif-medium"
             android:letterSpacing="0.14"
             android:textColor="#9A9A9A"
@@ -82,14 +86,26 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
+            android:lineSpacingExtra="2dp"
             android:textColor="#9A9A9A"
-            android:textSize="11sp" />
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/weekHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="OK  for more"
+            android:textColor="#7A7A7A"
+            android:textSize="11sp"
+            android:visibility="gone" />
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/buttons"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
+            android:layout_marginTop="16dp"
             android:orientation="horizontal">
 
             <ImageButton

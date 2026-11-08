@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="anSentence" type="id" />
+    <item name="anTotals" type="id" />
+    <item name="anWeeks" type="id" />
+    <item name="anMonths" type="id" />
+    <item name="anApps" type="id" />
+</resources>
