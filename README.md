@@ -14,9 +14,8 @@ It's a native Android app (Kotlin, no extra libraries), installed over the netwo
 You need a Windows PC with [Android Studio](https://developer.android.com/studio) (for the SDK and adb) and Git Bash.
 
 1. On the TV: *Settings → System → About*, press *Build* 7 times. Then *Developer options → USB debugging* on (and *Network debugging* if your TV has it). Note the TV's IP address.
-2. In Git Bash, in this folder, point the scripts at your TV (or change `TV=` at the top of `scripts/tv.sh`):
+2. In Git Bash, in this folder, connect to your TV. Its address is remembered in `.tv` (not in git):
    ```bash
-   export TV=192.168.x.x:5555
    scripts/tv.sh connect 192.168.x.x      # accept the prompt on the TV
    ```
 3. Build, install and turn things on:

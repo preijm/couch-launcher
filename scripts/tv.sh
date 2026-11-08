@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Helper for Bank Launch TV. Usage: scripts/tv.sh <command>
-#   connect <ip>   connect adb to the TV over the network (port 5555)
+#   connect <ip>   connect adb to the TV over the network (port 5555) and remember it
 #   deploy         build debug APK, install and open it
 #   shot [file]    screenshot the TV to shots/
 #   packages       list installed third-party packages
@@ -19,13 +19,17 @@ ADB="${ADB:-$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe}"
 PKG=nl.reijm.banklaunchtv
 YT=io.gh.reisxd.tizentube.cobalt
 STOCK_HOME=(com.google.android.apps.tv.launcherx com.google.android.tungsten.setupwraith)
-TV="${TV:-192.168.x.x:5555}"
-export ANDROID_SERIAL="${ANDROID_SERIAL:-$TV}"
+# The TV's address lives in .tv (not in git); "connect <ip>" writes it.
+TV="${TV:-$(cat .tv 2>/dev/null || true)}"
+if [ -z "$TV" ] && [ "${1:-}" != connect ] && [ -n "${1:-}" ]; then
+  echo "Which TV? Run once: scripts/tv.sh connect <ip of the TV>"; exit 1
+fi
+[ -n "$TV" ] && export ANDROID_SERIAL="${ANDROID_SERIAL:-$TV}"
 top() { "$ADB" shell dumpsys activity activities | grep -m1 -E "topResumedActivity|mResumedActivity"; }
 is_ours() { top | grep -q "$PKG"; }
 
 case "${1:-}" in
-  connect)  "$ADB" connect "$2:5555" ;;
+  connect)  "$ADB" connect "$2:5555" && echo "$2:5555" > .tv ;;
   deploy)   ./gradlew assembleDebug -q && "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk \
               && "$ADB" shell appops set $PKG GET_USAGE_STATS allow \
               && "$ADB" shell am start -n $PKG/.MainActivity ;;
