@@ -174,98 +174,78 @@ class LetterIcon(private val letter: String) : android.graphics.drawable.Drawabl
 }
 
 /**
- * Average per day for a row of weeks or months, oldest first: grey bars, the last one (now) in
- * white with its value, and a dashed line for "usual". Missing periods show as a thin stub.
+ * Average per day for a row of weeks or months, each bar split into blocks per app (app colours,
+ * first app at the bottom). The chosen bar is in full colour, the others a little faded. Missing periods
+ * show as a thin stub.
  */
-class TrendBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
+class StackedBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = 0xFF8A8A8A.toInt()
-    }
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
-    private val value = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.CENTER
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        color = Color.WHITE
-    }
-    private var values = listOf<Long?>()
+    private val value = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+    private var bars = listOf<List<Pair<Long, Int>>?>()
     private var labels = listOf<String>()
-    private var usual = 0L
     private var selected = -1
-    private var active = false
     private var progress = 1f
     private val r = RectF()
+    private val clip = android.graphics.Path()
 
-    /** The chosen bar: white while this chart is the one being browsed, lighter grey otherwise. */
-    fun select(index: Int, isActive: Boolean) {
-        selected = index; active = isActive
-        invalidate()
-    }
-
-    fun setValues(v: List<Long?>, l: List<String>, usualPerDay: Long) {
-        values = v; labels = l; usual = usualPerDay
+    /** [b]: per bar the blocks (time per day, colour), bottom first; null = no record. */
+    fun setData(b: List<List<Pair<Long, Int>>?>, l: List<String>) {
+        bars = b; labels = l
         grow(700) { progress = it }
     }
 
+    fun select(index: Int) { selected = index; invalidate() }
+
     override fun onDraw(c: Canvas) {
-        if (values.isEmpty()) return
+        if (bars.isEmpty()) return
         val d = resources.displayMetrics.density
         val sp = resources.displayMetrics.scaledDensity
-        label.textSize = 10 * sp
-        value.textSize = 12 * sp
-        line.strokeWidth = 1.2f * d
-        line.pathEffect = android.graphics.DashPathEffect(floatArrayOf(4 * d, 4 * d), 0f)
-        val labelH = 16 * d
-        val top = 20 * d
+        val labelH = 20 * d
+        val top = 24 * d
         val bottom = height - labelH
-        val usualW = 44 * d // room on the right for the "usual" label
-        val gap = 8 * d
-        val n = values.size
-        // With only a few bars, keep them bar-shaped instead of stretching them wide.
-        val bw = minOf((width - usualW - gap * (n - 1)) / n, 64 * d)
-        val max = maxOf(values.filterNotNull().maxOrNull() ?: 0L, usual, 30 * 60_000L).toFloat()
-        fun y(ms: Long) = bottom - (bottom - top) * (ms / max)
+        val gap = 16 * d
+        val n = bars.size
+        val bw = minOf((width - gap * (n - 1)) / n, 96 * d)
+        val max = maxOf(bars.maxOf { b -> b?.sumOf { it.first } ?: 0L }, 30 * 60_000L).toFloat()
 
-        // The "usual" line first, so the bars sit on top of it.
-        line.pathEffect = android.graphics.DashPathEffect(floatArrayOf(3 * d, 3 * d), 0f)
-        if (usual > 0) {
-            val uy = y(usual)
-            // Only in the gaps between bars, so it never runs through a bar's number.
-            for (i in 0 until n) {
-                val from = i * (bw + gap) + bw
-                val to = if (i == n - 1) width - usualW + 4 * d else (i + 1) * (bw + gap)
-                if (to > from) c.drawLine(from, uy, to, uy, line)
-            }
-            label.color = 0xFF9A9A9A.toInt()
-            label.textAlign = Paint.Align.LEFT
-            c.drawText("usual", width - usualW + 8 * d, uy + 3.5f * d, label)
-            label.textAlign = Paint.Align.CENTER
-        }
-
-        values.forEachIndexed { i, v ->
+        bars.forEachIndexed { i, b ->
             val x = i * (bw + gap)
-            val last = i == selected && active
             val chosen = i == selected
-            val h = if (v == null) 1.5f * d else ((bottom - y(v)) * progress).coerceAtLeast(2 * d)
-            paint.color = when {
-                v == null -> 0xFF2A2A2A.toInt()
-                last -> Color.WHITE
-                chosen -> 0xFF6A6A6A.toInt()
-                else -> 0xFF3E3E3E.toInt()
+            val total = b?.sumOf { it.first } ?: 0L
+            if (b == null || total <= 0L) {
+                paint.color = 0xFF2A2A2A.toInt()
+                r.set(x, bottom - 1.5f * d, x + bw, bottom)
+                c.drawRect(r, paint)
+            } else {
+                val h = ((bottom - top) * (total / max) * progress).coerceAtLeast(2 * d)
+                c.save()
+                clip.reset()
+                r.set(x, bottom - h, x + bw, bottom)
+                clip.addRoundRect(r, 3 * d, 3 * d, android.graphics.Path.Direction.CW)
+                c.clipPath(clip)
+                var y = bottom
+                b.forEach { (ms, color) ->
+                    if (ms <= 0) return@forEach
+                    val sh = h * ms / total
+                    paint.color = color
+                    paint.alpha = if (chosen) 255 else 150 // still readable, so each app can be followed across bars
+                    r.set(x, y - sh, x + bw, y)
+                    c.drawRect(r, paint)
+                    y -= sh
+                }
+                c.restore()
+                paint.alpha = 255
+                if (progress > 0.9f) {
+                    value.textSize = (if (chosen) 14 else 12) * sp
+                    value.typeface = Typeface.create(if (chosen) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
+                    value.color = if (chosen) Color.WHITE else 0xFF9A9A9A.toInt()
+                    c.drawText(WeekBarsText.short(total), x + bw / 2, bottom - h - 7 * d, value)
+                }
             }
-            r.set(x, bottom - h, x + bw, bottom)
-            c.drawRoundRect(r, 2 * d, 2 * d, paint)
-            label.color = if (last) Color.WHITE else 0xFF8A8A8A.toInt()
-            c.drawText(labels.getOrElse(i) { "" }, x + bw / 2, height - 3 * d, label)
-            // Every bar gets its value, so ups and downs are easy to read; now in white.
-            if (v != null && progress > 0.9f) {
-                val t = WeekBarsText.short(v)
-                value.textSize = (if (last) 12 else 10) * sp
-                value.color = if (last) Color.WHITE else 0xFFB0B0B0.toInt()
-                val half = value.measureText(t) / 2
-                c.drawText(t, (x + bw / 2).coerceIn(half, width - usualW - half), bottom - h - 5 * d, value)
-            }
+            label.textSize = 12 * sp
+            label.color = if (chosen) Color.WHITE else 0xFF8A8A8A.toInt()
+            c.drawText(labels.getOrElse(i) { "" }, x + bw / 2, height - 4 * d, label)
         }
     }
 }

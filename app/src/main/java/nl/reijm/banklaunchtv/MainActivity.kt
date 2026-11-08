@@ -834,22 +834,23 @@ class MainActivity : Activity() {
         header.addView(LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; id = R.id.anTotals })
         col.addView(header, LinearLayout.LayoutParams(-1, -2))
 
-        val charts = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        col.addView(charts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(36) })
-        fun chartBlock(titleId: Int, chartId: Int, endMargin: Int) = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(heading("").apply { id = titleId })
-            addView(
-                TrendBars(this@MainActivity).apply { id = chartId },
-                LinearLayout.LayoutParams(-1, dp(120)).apply { topMargin = dp(8) },
-            )
-            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(endMargin) }
-        }
-        charts.addView(chartBlock(R.id.anWeeksTitle, R.id.anWeeks, 48))
-        charts.addView(chartBlock(R.id.anMonthsTitle, R.id.anMonths, 0))
+        // Weeks / Months: up and down switch between them.
+        val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+        tabs.addView(text("Weeks", 17f, Color.WHITE).apply { id = R.id.anWeeksTitle })
+        tabs.addView(text("Months", 17f, Color.WHITE).apply { id = R.id.anMonthsTitle },
+            LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(24) })
+        tabs.addView(text("average per day", 12f, 0xFF6A6A6A.toInt()),
+            LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(24) })
+        col.addView(tabs, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(30) })
+        col.addView(StackedBars(this).apply { id = R.id.anWeeks },
+            LinearLayout.LayoutParams(-1, dp(190)).apply { topMargin = dp(8) })
 
-        col.addView(heading("").apply { id = R.id.anAppsTitle }, lp(top = 18))
-        col.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; id = R.id.anApps }, lp(top = 6))
+        // The chosen bar, split by app, with what changed since the one before.
+        col.addView(heading("").apply { id = R.id.anAppsTitle }, lp(top = 20))
+        col.addView(SegmentBar(this).apply { id = R.id.anSplit },
+            LinearLayout.LayoutParams(-1, dp(12)).apply { topMargin = dp(10) })
+        col.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; id = R.id.anApps },
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         col.addView(Space(this), LinearLayout.LayoutParams(1, 0, 1f))
         col.addView(text("◀ ▶  choose a bar     ▲ ▼  weeks or months     Back  close", 11f, 0xFF6A6A6A.toInt()))
 
@@ -877,8 +878,8 @@ class MainActivity : Activity() {
             KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> { if (!down) closeAnalysis() }
             KeyEvent.KEYCODE_DPAD_LEFT -> if (down) moveBar(-1)
             KeyEvent.KEYCODE_DPAD_RIGHT -> if (down) moveBar(1)
-            KeyEvent.KEYCODE_DPAD_UP -> if (down && anChart != 0) { anChart = 0; showSelection() }
-            KeyEvent.KEYCODE_DPAD_DOWN -> if (down && anChart != 1) { anChart = 1; showSelection() }
+            KeyEvent.KEYCODE_DPAD_UP -> if (down && anChart != 0) { anChart = 0; showChart(); showSelection() }
+            KeyEvent.KEYCODE_DPAD_DOWN -> if (down && anChart != 1) { anChart = 1; showChart(); showSelection() }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {}
             else -> return false
         }
@@ -969,30 +970,52 @@ class MainActivity : Activity() {
         anWeek = anWeek.coerceIn(0, weekBars.size - 1)
         anMonth = anMonth.coerceIn(0, monthBars.size - 1)
 
-        val usual = usualPerDay()
-        val day = SimpleDateFormat("d MMM", en)
-        val mon = SimpleDateFormat("MMM", en)
-        a.findViewById<TrendBars>(R.id.anWeeks).setValues(
-            weekBars.map { it.perDay },
-            weekBars.mapIndexed { i, w -> if (i == weekBars.size - 1) "this week" else day.format(Date(w.start)) },
-            usual,
-        )
-        a.findViewById<TrendBars>(R.id.anMonths).setValues(
-            monthBars.map { it.perDay }, monthBars.map { mon.format(Date(it.start)) }, usual,
-        )
-        a.findViewById<TextView>(R.id.anWeeksTitle).text =
-            if (weekBars.size > 1) "PER DAY, LAST ${weekBars.size} WEEKS" else "PER DAY, THIS WEEK"
-        a.findViewById<TextView>(R.id.anMonthsTitle).text = "PER DAY, PER MONTH"
+        showChart()
         showSelection()
     }
 
-    /** Highlight the chosen bar and list that period per app. */
+    /** Fill the chart with the weeks or the months, each bar split by app. */
+    private fun showChart() {
+        val a = analysis ?: return
+        val bars = if (anChart == 0) weekBars else monthBars
+        val day = SimpleDateFormat("d MMM", en)
+        val mon = SimpleDateFormat("MMM", en)
+        a.findViewById<StackedBars>(R.id.anWeeks).setData(
+            bars.map { p -> if (p.apps == null) null else blocks(p).map { it.ms / p.days to it.color } },
+            bars.mapIndexed { i, p ->
+                when {
+                    anChart == 1 -> mon.format(Date(p.start))
+                    i == bars.size - 1 -> "this week"
+                    else -> day.format(Date(p.start))
+                }
+            },
+        )
+        a.findViewById<TextView>(R.id.anWeeksTitle).setTextColor(if (anChart == 0) Color.WHITE else 0xFF5A5A5A.toInt())
+        a.findViewById<TextView>(R.id.anMonthsTitle).setTextColor(if (anChart == 1) Color.WHITE else 0xFF5A5A5A.toInt())
+    }
+
+    private class Block(val name: String, val ms: Long, val color: Int)
+
+    /** A period per app, in list order, with everything else as one grey block at the end. */
+    private fun blocks(p: PeriodAverage): List<Block> {
+        val byApp = p.apps.orEmpty()
+        val listed = apps.flatMap { it.packages }.toSet()
+        val out = apps.map { spec -> Block(spec.name, spec.packages.sumOf { byApp[it] ?: 0L }, Color.parseColor(spec.color)) }
+        // Apps outside the list: the bigger ones (half an hour or more) by name, the rest together.
+        val others = byApp.filterKeys { it !in listed && it !in NOT_WATCHING && it != packageName }
+            .entries.sortedByDescending { it.value }
+        val named = others.filter { it.value >= 30 * 60_000L }.take(2)
+            .mapIndexed { i, e -> Block(appLabel(e.key), e.value, if (i == 0) OTHER_1 else OTHER_2) }
+        val rest = others.drop(named.size).sumOf { it.value }
+        return out + named + Block(if (named.isEmpty()) "Other apps" else "Other", rest, OTHER)
+    }
+
+    /** Highlight the chosen bar and show that period split by app. */
     private fun showSelection() {
         val a = analysis ?: return
-        val weeksChart = a.findViewById<TrendBars>(R.id.anWeeks)
-        val monthsChart = a.findViewById<TrendBars>(R.id.anMonths)
-        weeksChart.select(anWeek, anChart == 0)
-        monthsChart.select(anMonth, anChart == 1)
+        val bars = if (anChart == 0) weekBars else monthBars
+        val index = if (anChart == 0) anWeek else anMonth
+        a.findViewById<StackedBars>(R.id.anWeeks).select(index)
 
         val p = (if (anChart == 0) weekBars.getOrNull(anWeek) else monthBars.getOrNull(anMonth)) ?: return
         val last = if (anChart == 0) anWeek == weekBars.size - 1 else anMonth == monthBars.size - 1
@@ -1002,36 +1025,42 @@ class MainActivity : Activity() {
             last -> monthFmt.format(Date(p.start)).uppercase(en) + " SO FAR"
             else -> SimpleDateFormat("MMMM yyyy", en).format(Date(p.start)).uppercase(en)
         }
-        a.findViewById<TextView>(R.id.anAppsTitle).text = "$title PER APP"
+        val now = blocks(p)
+        val perDay = now.sumOf { it.ms } / p.days.coerceAtLeast(1)
+        a.findViewById<TextView>(R.id.anAppsTitle).text = "$title  ·  ≈ ${UsageRepo.format(perDay)} A DAY"
+        a.findViewById<SegmentBar>(R.id.anSplit).setValues(now.map { it.ms to it.color })
 
+        // Legend: per app the time per day and the change since the bar before.
+        val before = bars.getOrNull(index - 1)?.takeIf { it.apps != null }?.let { b -> blocks(b).associate { it.name to it.ms / b.days } }
         val list = a.findViewById<LinearLayout>(R.id.anApps)
         list.removeAllViews()
-        val byApp = p.apps.orEmpty()
-        val rows = apps.map { spec -> Triple(spec.name, spec.packages.sumOf { byApp[it] ?: 0L }, Color.parseColor(spec.color)) }
-            .sortedByDescending { it.second }.toMutableList()
-        val listed = apps.flatMap { it.packages }.toSet()
-        // Other apps: the bigger ones by name, the rest together.
-        val others = byApp.filterKeys { it !in listed && it !in NOT_WATCHING && it != packageName }
-            .entries.sortedByDescending { it.value }
-        val named = others.filter { it.value >= 30 * 60_000L }.take(3)
-        named.forEach { rows += Triple(appLabel(it.key), it.value, 0xFF6A6A6A.toInt()) }
-        val rest = others.drop(named.size).sumOf { it.value }
-        if (rest >= 60_000L) rows += Triple(if (named.isEmpty()) "Other apps" else "Other apps (rest)", rest, 0xFF6A6A6A.toInt())
-        val total = rows.sumOf { it.second }.coerceAtLeast(1L)
-        rows.forEach { (name, ms, color) ->
-            list.addView(LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(text(name, 13f, if (color == 0xFF6A6A6A.toInt()) GREY else Color.WHITE).apply {
+        val shown = now.filter { it.ms > 0 || (before?.get(it.name) ?: 0L) > 0 }
+        shown.chunked(3).forEach { row ->
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            row.forEach { b ->
+                val ms = b.ms / p.days.coerceAtLeast(1)
+                val item = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                item.addView(View(this).apply {
+                    background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(b.color) }
+                }, LinearLayout.LayoutParams(dp(9), dp(9)).apply { marginEnd = dp(10) })
+                item.addView(text(b.name, 14f, if (b.color in listOf(OTHER, OTHER_1, OTHER_2)) GREY else Color.WHITE).apply {
                     maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-                }, LinearLayout.LayoutParams(dp(150), -2))
-                addView(ShareLine(this@MainActivity).apply { setValue(ms.toFloat() / total, color) },
-                    LinearLayout.LayoutParams(dp(360), dp(5)))
-                addView(text(UsageRepo.format(ms), 13f, Color.WHITE).apply { gravity = Gravity.END },
-                    LinearLayout.LayoutParams(dp(80), -2))
-                addView(text("≈ ${UsageRepo.format(ms / p.days.coerceAtLeast(1))} a day", 13f, GREY).apply { gravity = Gravity.END },
-                    LinearLayout.LayoutParams(dp(130), -2))
-            }, lp(top = 3))
+                }, LinearLayout.LayoutParams(-2, -2).apply { weight = 0f })
+                item.addView(text(WeekBarsText.short(ms), 14f, Color.WHITE, "sans-serif-medium"),
+                    LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
+                before?.let { prev ->
+                    val diff = ms - (prev[b.name] ?: 0L)
+                    val t = when {
+                        Math.abs(diff) < 60_000L -> "same"
+                        diff > 0 -> "+" + WeekBarsText.short(diff)
+                        else -> "−" + WeekBarsText.short(-diff)
+                    }
+                    item.addView(text(t, 13f, GREY), LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(8) })
+                }
+                line.addView(item, LinearLayout.LayoutParams(0, -2, 1f))
+            }
+            repeat(3 - row.size) { line.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f)) }
+            list.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
         }
     }
 
@@ -1171,6 +1200,9 @@ class MainActivity : Activity() {
         )
         private val DIM = Color.parseColor("#8A8A8A")
         private val GREY = Color.parseColor("#9A9A9A")
+        private val OTHER = Color.parseColor("#5A5A5A")
+        private val OTHER_1 = Color.parseColor("#8E8E93")
+        private val OTHER_2 = Color.parseColor("#6E6E73")
         private val ADD_DIM = Color.parseColor("#4A4A4A")
         private const val NAME_SMALL = 28f
         private const val NAME_BIG = 40f
