@@ -37,9 +37,6 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.style.ForegroundColorSpan
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -371,20 +368,18 @@ class MainActivity : Activity() {
     private fun usualPerDay(): Long =
         apps.sumOf { stats[it.name]?.year ?: 0L } / Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
 
-    /** "≈ 2h 00m per day, 1h 25m less than usual", with the comparison in white. */
+    /** "≈ 2h 00m per day  ·  ↓ 41% vs usual": short and quiet; within 10% it's "about usual". */
     private fun weekSentence(perDay: Long): CharSequence {
         val usual = usualPerDay()
         val head = "≈ ${UsageRepo.format(perDay)} per day"
         if (usual <= 0) return head
-        val diff = perDay - usual
+        val pct = Math.round((perDay - usual) * 100.0 / usual).toInt()
         val cmp = when {
-            Math.abs(diff) < maxOf(10 * 60_000L, usual / 10) -> "about your usual"
-            diff < 0 -> "${WeekBarsText.short(-diff)} less than usual"
-            else -> "${WeekBarsText.short(diff)} more than usual"
+            Math.abs(pct) < 10 -> "about usual"
+            pct < 0 -> "↓ ${-pct}% vs usual"
+            else -> "↑ $pct% vs usual"
         }
-        return SpannableString("$head, $cmp").apply {
-            setSpan(ForegroundColorSpan(Color.WHITE), head.length + 2, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
+        return "$head  ·  $cmp"
     }
 
     /** Days so far in the selected period, today included. */
