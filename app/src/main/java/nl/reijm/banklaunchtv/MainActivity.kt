@@ -136,6 +136,8 @@ class MainActivity : Activity() {
             // The TV changes packages all the time; only rebuild for apps that are in the list.
             val pkg = i.data?.schemeSpecificPart ?: return
             if (apps.none { pkg in it.packages }) return
+            // Updates and component changes also land here; only rebuild when an app came or went.
+            if (!demo && rows.isNotEmpty() && !installedChanged()) return
             dirty = true
             if (hasWindowFocus()) rebuildList()
         }
@@ -447,6 +449,12 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Whether any app in the list was installed or removed since the rows were built. */
+    private fun installedChanged(): Boolean {
+        val installed = installedApps()
+        return rows.any { r -> r.spec.packages.firstOrNull { it in installed } != r.app?.pkg }
+    }
+
     private fun buildList() {
         dirty = false
         apps = AppList.load(this)
@@ -683,7 +691,7 @@ class MainActivity : Activity() {
             }
             start()
         }
-        if (on) r.bars.setValues(stats[r.spec.name]?.weekDays ?: LongArray(7) { -1L }, r.color)
+        if (on) r.bars.setValues(stats[r.spec.name]?.weekDays ?: LongArray(7) { -1L }, r.color, replay = true)
     }
 
     // ------------------------------------------------------------------ opening apps

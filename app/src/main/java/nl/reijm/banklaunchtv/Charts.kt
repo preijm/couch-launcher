@@ -11,39 +11,71 @@ import android.util.AttributeSet
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 
-private fun View.grow(ms: Long, update: (Float) -> Unit) =
-    ValueAnimator.ofFloat(0f, 1f).apply {
-        duration = ms; interpolator = DecelerateInterpolator(2f)
-        addUpdateListener { update(it.animatedValue as Float); invalidate() }
-        start()
+/**
+ * Animates a chart from what it shows now to its new values. Charts get new numbers every few
+ * minutes; they move from the old shape to the new one instead of dropping to zero and growing
+ * again (which looked like the screen reloading).
+ */
+private class Tween(private val view: View) {
+    private var anim: ValueAnimator? = null
+    var t = 1f
+        private set
+
+    fun start(ms: Long) {
+        anim?.cancel()
+        t = 0f
+        anim = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = ms; interpolator = DecelerateInterpolator(2f)
+            addUpdateListener { t = it.animatedValue as Float; view.invalidate() }
+            start()
+        }
     }
+
+    fun lerp(from: Float, to: Float) = from + (to - from) * t
+}
+
+/** This array grown or shrunk to [n] entries, new ones 0. */
+private fun FloatArray.resized(n: Int) = FloatArray(n) { getOrElse(it) { 0f } }
 
 /** One bar split into a coloured segment per app, in app order, sized by watch time. */
 class SegmentBar @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var parts = listOf<Pair<Float, Int>>()
-    private var progress = 1f
+    private var colors = IntArray(0)
+    /** Each app's share of the bar: shown at the start of the animation, and at its end. */
+    private var from = FloatArray(0)
+    private var to = FloatArray(0)
+    private val tween = Tween(this)
     private val r = RectF()
 
     fun setValues(values: List<Pair<Long, Int>>) {
         val total = values.sumOf { it.first }.toFloat()
-        parts = if (total <= 0f) emptyList() else values.filter { it.first > 0 }.map { it.first / total to it.second }
-        grow(900) { progress = it }
+        val next = FloatArray(values.size) { if (total <= 0f) 0f else values[it].first / total }
+        val nextColors = IntArray(values.size) { values[it].second }
+        if (next.contentEquals(to) && nextColors.contentEquals(colors)) return
+        // Same apps in the same order: move on from the shares shown now. Otherwise grow from nothing.
+        from = if (nextColors.contentEquals(colors)) current() else FloatArray(values.size)
+        to = next; colors = nextColors
+        tween.start(900)
     }
+
+    private fun current() = FloatArray(to.size) { tween.lerp(from.getOrElse(it) { 0f }, to[it]) }
 
     override fun onDraw(c: Canvas) {
         val d = resources.displayMetrics.density
         val gap = 2 * d
         val rad = 1.5f * d
-        if (parts.isEmpty()) {
+        val parts = current()
+        val shown = parts.count { it > 0f }
+        if (shown == 0) {
             paint.color = 0xFF1A1A1A.toInt(); r.set(0f, 0f, width.toFloat(), height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
             return
         }
-        val usable = (width - gap * (parts.size - 1)) * progress
+        val usable = width - gap * (shown - 1)
         var x = 0f
-        parts.forEach { (p, color) ->
+        parts.forEachIndexed { i, p ->
+            if (p <= 0f) return@forEachIndexed
             val w = usable * p
-            paint.color = color
+            paint.color = colors[i]
             r.set(x, 0f, x + w, height.toFloat())
             c.drawRoundRect(r, rad, rad, paint)
             x += w + gap
@@ -78,13 +110,21 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
     }
     private var values = LongArray(7) { -1L }
     private var color = Color.WHITE
-    private var progress = 1f
+    /** Bar heights as drawn last, so new numbers can move on from there. */
+    private val drawn = FloatArray(7)
+    private var from = FloatArray(7)
+    private var growing = false
+    private val tween = Tween(this)
     private val r = RectF()
 
-    fun setValues(v: LongArray, appColor: Int) {
-        values = v
+    /** [replay]: grow the bars from zero again (the card was just opened). */
+    fun setValues(v: LongArray, appColor: Int, replay: Boolean = false) {
+        if (!replay && v.contentEquals(values) && appColor == color) return
+        from = if (replay) FloatArray(7) else drawn.copyOf()
+        growing = replay
+        values = v.copyOf()
         color = appColor
-        grow(600) { progress = it }
+        tween.start(600)
     }
 
     override fun onDraw(c: Canvas) {
@@ -105,14 +145,16 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
         for (i in 0 until 7) {
             val v = values[i]
             val x = i * (bw + gap)
-            val h = if (v < 0) 1.5f * d else ((2 * d) + (barMax - valueH - 2 * d) * (v / max)) * progress
+            val target = if (v < 0) 1.5f * d else (2 * d) + (barMax - valueH - 2 * d) * (v / max)
+            val h = tween.lerp(from[i], target)
+            drawn[i] = h
             paint.color = when { v < 0 -> 0xFF2A2A2A.toInt(); i == today -> color; else -> dim }
             r.set(x, barMax - h, x + bw, barMax)
             c.drawRoundRect(r, 2 * d, 2 * d, paint)
             text.color = if (i == today) Color.WHITE else 0xFF9A9A9A.toInt()
             c.drawText(days[i], x + bw / 2, height - 2 * d, text)
             // Today's time above its bar, once it's worth mentioning.
-            if (i == today && v >= TODAY_MIN && progress > 0.9f) {
+            if (i == today && v >= TODAY_MIN && (!growing || tween.t > 0.9f)) {
                 // Centred on the bar, but kept inside the chart (Sunday is at the right edge).
                 val t = short(v)
                 val half = value.measureText(t) / 2
@@ -127,24 +169,29 @@ class WeekBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = nu
 /** Thin track with a coloured fill: this app's time relative to the most-watched app. */
 class ShareLine @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? = null) : View(ctx, attrs) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var from = 0f
     private var fraction = 0f
     private var color = Color.WHITE
-    private var progress = 1f
+    private val tween = Tween(this)
     private val r = RectF()
 
     fun setValue(f: Float, appColor: Int) {
-        fraction = f.coerceIn(0f, 1f)
+        val next = f.coerceIn(0f, 1f)
+        if (next == fraction && appColor == color) return
+        from = tween.lerp(from, fraction)
+        fraction = next
         color = appColor
-        grow(700) { progress = it }
+        tween.start(700)
     }
 
     override fun onDraw(c: Canvas) {
         val rad = height / 2f
         paint.color = 0xFF1A1A1A.toInt()
         r.set(0f, 0f, width.toFloat(), height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
-        if (fraction <= 0f) return
+        val f = tween.lerp(from, fraction)
+        if (f <= 0f) return
         paint.color = color
-        r.set(0f, 0f, width * fraction * progress, height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
+        r.set(0f, 0f, width * f, height.toFloat()); c.drawRoundRect(r, rad, rad, paint)
     }
 }
 
@@ -185,7 +232,11 @@ class StackedBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? =
     private var bars = listOf<List<Pair<Long, Int>>?>()
     private var labels = listOf<String>()
     private var selected = -1
-    private var progress = 1f
+    /** Bar heights as drawn last, so a refresh can move on from there. */
+    private var drawn = FloatArray(0)
+    private var from = FloatArray(0)
+    private var growing = false
+    private val tween = Tween(this)
     private val r = RectF()
     private val clip = android.graphics.Path()
 
@@ -194,8 +245,14 @@ class StackedBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? =
      * the last bar are periods still to come: a faint empty slot each.
      */
     fun setData(b: List<List<Pair<Long, Int>>?>, l: List<String>) {
+        if (b == bars && l == labels) return
+        // Other periods (weeks or months, or a new week began): grow from zero.
+        // The same periods with fresh numbers: move on from the bars shown now.
+        growing = l != labels
+        from = if (growing) FloatArray(b.size) else drawn.resized(b.size)
+        drawn = drawn.resized(b.size)
         bars = b; labels = l
-        grow(700) { progress = it }
+        tween.start(700)
     }
 
     fun select(index: Int) { selected = index; invalidate() }
@@ -230,7 +287,8 @@ class StackedBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? =
                 r.set(x, bottom - 1.5f * d, x + bw, bottom)
                 c.drawRect(r, paint)
             } else {
-                val h = ((bottom - top) * (total / max) * progress).coerceAtLeast(2 * d)
+                val h = tween.lerp(from.getOrElse(i) { 0f }, (bottom - top) * (total / max)).coerceAtLeast(2 * d)
+                drawn[i] = h
                 c.save()
                 clip.reset()
                 r.set(x, bottom - h, x + bw, bottom)
@@ -248,7 +306,7 @@ class StackedBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? =
                 }
                 c.restore()
                 paint.alpha = 255
-                if (progress > 0.9f) {
+                if (!growing || tween.t > 0.9f) {
                     value.textSize = (if (chosen) 14 else 12) * sp
                     value.typeface = Typeface.create(if (chosen) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
                     value.color = if (chosen) Color.WHITE else 0xFF9A9A9A.toInt()
