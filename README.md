@@ -25,6 +25,7 @@ You need a Windows PC with [Android Studio](https://developer.android.com/studio
    scripts/tv.sh speaker-on   # allow the speaker switch
    scripts/tv.sh keys-on      # YouTube / green / yellow buttons (keys-off: undo)
    scripts/tv.sh yt-install   # YouTube without ads (see below)
+   scripts/tv.sh debloat      # switch off trackers, ads and junk (see below)
    ```
 4. Your app list and colours: `app/src/main/java/nl/reijm/banklaunchtv/Config.kt`.
 
@@ -33,6 +34,11 @@ Other commands: `scripts/tv.sh` with no arguments lists them all (screenshots, b
 ## Keep these safe
 - **The signing key**, `C:\Users\<you>\.android\debug.keystore`. Couch Launcher is signed with it. Lose it and updates can't be installed over the app; you'd have to uninstall it first, which wipes the watch-time history (restore it from a backup).
 - **Watch time**: `scripts/tv.sh data-backup` copies it from the TV to `backups/` (and to OneDrive if that folder exists, see the script). After a reinstall: `scripts/tv.sh data-restore backups/watch-time-<date>.xml`.
+
+## Trackers and junk off
+`scripts/tv.sh debloat` switches off what the TV runs behind your back: Samba TV (which recognises what's on screen and reports what you watch), Sony and Google telemetry, promo rows, apps pushed onto the TV, shop demo mode and preloaded apps. The list is [`scripts/debloat.txt`](scripts/debloat.txt), taken from [Clean Your TV](https://github.com/Gathin23/cleanyourtv)'s tested list for the BRAVIA 4K VH2; for another TV, check their list for your model.
+
+Nothing is uninstalled: `scripts/tv.sh debloat-undo` switches everything back on. A firmware update can turn things back on; `scripts/tv.sh debloat-check` shows what came back, and `debloat` switches it off again.
 
 ## YouTube without ads
 The YouTube tile and button open [TizenTube Cobalt](https://github.com/reisxd/TizenTubeCobalt), YouTube's TV app without ads. Install it once; it updates itself after that:

@@ -1,0 +1,45 @@
+# Junk to switch off on a Sony BRAVIA 4K VH2 (Google TV, Android 12), used by: scripts/tv.sh debloat
+# Taken from Clean Your TV's tested list for this model:
+# https://github.com/Gathin23/cleanyourtv/blob/main/examples/sony-bravia-4k-vh2/debloat.txt
+# Packages are disabled, not uninstalled: scripts/tv.sh debloat-undo turns them back on.
+# Put a # in front of a line to keep that app. A package the TV doesn't have is skipped.
+#
+# Left alone on purpose: HDMI/tuner (com.sony.dtv.tvinput.*, tvx, tvapi), Bravia Sync, com.mediatek.*,
+# firmware updates, Google Assistant, Chromecast built-in, Bluetooth.
+# Also kept: com.sonyericsson.idd.agent and com.sony.dtv.sonybugreportsys; on this model disabling
+# either one broke Ethernet through a USB adapter.
+
+# Samba TV: recognises what's on screen and reports what you watch
+tv.samba.ssm
+tv.samba.ssm.ui
+
+# Telemetry and usage tracking
+com.qterics.da.product
+com.sony.dtv.da.service
+com.google.android.feedback
+com.sony.dtv.lastaccess
+com.sony.dtv.usercontext
+
+# Ads, promos and apps pushed onto the TV
+com.sony.dtv.promos
+com.sony.dtv.sonyselect
+com.sony.dtv.sonytab
+android.autoinstalls.config.sony.bravia
+com.vewd.core.integration.dia
+com.sony.dtv.seeds.iot
+com.sony.dtv.seeds.iot.remotestart
+com.sony.dtv.b2b.vendorprotocol
+
+# Shop demo mode
+com.sony.dtv.demosupport
+com.sony.dtv.demosystemsupport
+com.sony.dtv.multiscreendemo
+
+# Preloaded apps we don't use
+com.sony.dtv.customersupport
+com.sony.dtv.smarthelp
+com.sony.dtv.helpguidecontents
+com.sonypicturescore
+com.google.android.videos
+com.google.android.play.games
+com.google.android.youtube.tvmusic

@@ -10,6 +10,9 @@
 #   yt-restart     restart YouTube on the TV
 #   speaker-on     let the home screen switch between the Bluetooth speaker and the TV
 #   keys-on        make the remote's YouTube button open our YouTube (keys-off: undo)
+#   debloat        switch off the TV's trackers, ads and junk in scripts/debloat.txt (nothing is uninstalled)
+#   debloat-undo   switch back on everything debloat switched off
+#   debloat-check  after a TV update: show junk that got switched back on (debloat again to fix)
 #   data-backup    copy the saved watch time from the TV to backups/ and OneDrive
 #   data-restore <file>  put a backup back on the TV (after a reinstall)
 set -euo pipefail
@@ -26,6 +29,9 @@ fi
 [ -n "$TV" ] && export ANDROID_SERIAL="${ANDROID_SERIAL:-$TV}"
 top() { "$ADB" shell dumpsys activity activities | grep -m1 -E "topResumedActivity|mResumedActivity"; }
 is_ours() { top | grep -q "$PKG"; }
+DEBLOAT_DONE=backups/debloat-done.txt   # what "debloat" switched off on this TV, for undo
+junk_list() { sed 's/#.*//' scripts/debloat.txt | tr -d ' \r' | grep -v '^$'; }
+is_enabled() { "$ADB" shell pm list packages -e "$1" | tr -d '\r' | grep -qx "package:$1"; }
 
 case "${1:-}" in
   connect)  "$ADB" connect "$2:5555" && echo "$2:5555" > .tv ;;
@@ -88,5 +94,24 @@ case "${1:-}" in
     "$ADB" shell rm /data/local/tmp/usage_days.xml
     "$ADB" shell am start -n $PKG/.MainActivity >/dev/null
     echo "Restored $2" ;;
-  *) sed -n '2,14p' "$0" ;;
+  debloat)
+    # Only touches packages that are on now, and remembers them, so undo doesn't
+    # switch on things that were already off from the factory.
+    mkdir -p backups; touch "$DEBLOAT_DONE"
+    for p in $(junk_list); do
+      if is_enabled "$p"; then
+        "$ADB" shell pm disable-user --user 0 "$p" >/dev/null && echo "off  $p" \
+          && { grep -qx "$p" "$DEBLOAT_DONE" || echo "$p" >> "$DEBLOAT_DONE"; }
+      fi
+    done
+    echo "Done. Switched off so far: $(wc -l < "$DEBLOAT_DONE") (undo: scripts/tv.sh debloat-undo)" ;;
+  debloat-undo)
+    [ -s "$DEBLOAT_DONE" ] || { echo "Nothing to undo ($DEBLOAT_DONE is empty)"; exit 0; }
+    while read -r p; do "$ADB" shell pm enable "$p" >/dev/null && echo "on   $p"; done < "$DEBLOAT_DONE"
+    rm "$DEBLOAT_DONE" ;;
+  debloat-check)
+    back=0
+    for p in $(junk_list); do is_enabled "$p" && { echo "back on: $p"; back=1; }; done
+    [ $back = 0 ] && echo "All junk is still off." || echo "Run scripts/tv.sh debloat to switch it off again." ;;
+  *) sed -n '2,17p' "$0" ;;
 esac
