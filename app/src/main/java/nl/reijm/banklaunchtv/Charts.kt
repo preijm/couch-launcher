@@ -221,7 +221,7 @@ class LetterIcon(private val letter: String) : android.graphics.drawable.Drawabl
 }
 
 /**
- * Average per day for a row of weeks or months, each bar split into blocks per app (app colours,
+ * Time per day (or in total) for a row of weeks or months, each bar split into blocks per app (app colours,
  * first app at the bottom). The chosen bar is in full colour, the others a little faded. Missing periods
  * show as a thin stub.
  */
@@ -241,7 +241,7 @@ class StackedBars @JvmOverloads constructor(ctx: Context, attrs: AttributeSet? =
     private val clip = android.graphics.Path()
 
     /**
-     * [b]: per bar the blocks (time per day, colour), bottom first; null = no record. Labels past
+     * [b]: per bar the blocks (time, colour), bottom first; null = no record. Labels past
      * the last bar are periods still to come: a faint empty slot each.
      */
     fun setData(b: List<List<Pair<Long, Int>>?>, l: List<String>) {

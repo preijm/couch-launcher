@@ -819,7 +819,8 @@ class MainActivity : Activity() {
 
     /**
      * Full-screen "your TV time": the week line, totals, per-day trends for weeks and months, and
-     * per app for the chosen bar. Left/right picks a bar, up/down switches weeks/months, Back closes.
+     * per app for the chosen bar. Left/right picks a bar, up/down switches weeks/months, OK switches
+     * between the average per day and the total for each period, Back closes.
      * Only periods the TV has complete records for are shown, so every number is measured.
      */
     private var analysis: FrameLayout? = null
@@ -829,6 +830,7 @@ class MainActivity : Activity() {
     private var anChart = 0 // 0 = weeks, 1 = months
     private var anWeek = 0
     private var anMonth = 0
+    private var anTotal = false // false = average per day, true = total per period
 
     private fun showAnalysis() {
         if (analysis != null) return
@@ -870,7 +872,7 @@ class MainActivity : Activity() {
         col.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; id = R.id.anApps },
             LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         col.addView(Space(this), LinearLayout.LayoutParams(1, 0, 1f))
-        col.addView(text("◀ ▶  choose a bar     ▲ ▼  weeks or months", 11f, 0xFF6A6A6A.toInt()))
+        col.addView(text("◀ ▶  choose a bar     ▲ ▼  weeks or months     OK  per day or total", 11f, 0xFF6A6A6A.toInt()))
 
         anChart = 0
         anWeek = Int.MAX_VALUE
@@ -898,7 +900,8 @@ class MainActivity : Activity() {
             KeyEvent.KEYCODE_DPAD_RIGHT -> if (down) moveBar(1)
             KeyEvent.KEYCODE_DPAD_UP -> if (down && anChart != 0) { anChart = 0; showChart(); showSelection() }
             KeyEvent.KEYCODE_DPAD_DOWN -> if (down && anChart != 1) { anChart = 1; showChart(); showSelection() }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {}
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER ->
+                if (down && event.repeatCount == 0) { anTotal = !anTotal; showChart(); showSelection() }
             else -> return false
         }
         return true
@@ -979,6 +982,9 @@ class MainActivity : Activity() {
         showSelection()
     }
 
+    /** A period's time as shown now: the whole period, or its average per day. */
+    private fun shown(ms: Long, p: PeriodAverage) = if (anTotal) ms else ms / p.days.coerceAtLeast(1)
+
     /** Fill the chart with the weeks or the months, each bar split by app. */
     private fun showChart() {
         val a = analysis ?: return
@@ -986,7 +992,7 @@ class MainActivity : Activity() {
         val day = SimpleDateFormat("d MMM", en)
         val mon = SimpleDateFormat("MMM", en)
         a.findViewById<StackedBars>(R.id.anWeeks).setData(
-            bars.map { p -> if (p.apps == null) null else blocks(p).map { it.ms / p.days to it.color } },
+            bars.map { p -> if (p.apps == null) null else blocks(p).map { shown(it.ms, p) to it.color } },
             bars.mapIndexed { i, p ->
                 when {
                     anChart == 1 -> mon.format(Date(p.start))
@@ -1043,19 +1049,24 @@ class MainActivity : Activity() {
             else -> SimpleDateFormat("MMMM yyyy", en).format(Date(p.start)).uppercase(en)
         }
         val now = blocks(p)
-        val perDay = now.sumOf { it.ms } / p.days.coerceAtLeast(1)
-        a.findViewById<TextView>(R.id.anAppsTitle).text = "$title     ${UsageRepo.format(perDay)} A DAY"
+        val total = now.sumOf { it.ms }
+        val perDay = "${UsageRepo.format(total / p.days.coerceAtLeast(1))} A DAY"
+        val whole = "${UsageRepo.format(total)} TOTAL"
+        a.findViewById<TextView>(R.id.anAppsTitle).text =
+            "$title     " + if (anTotal) "$whole  ·  $perDay" else "$perDay  ·  $whole"
         a.findViewById<SegmentBar>(R.id.anSplit).setValues(now.map { it.ms to it.color })
 
-        // Legend: per app the time per day and the change since the bar before.
-        val before = bars.getOrNull(index - 1)?.takeIf { it.apps != null }?.let { b -> blocks(b).associate { it.name to it.ms / b.days } }
+        // Legend: per app the time (per day or in total) and the change since the bar before.
+        // A period still running has no fair total to set against a finished one.
+        val before = bars.getOrNull(index - 1)?.takeIf { it.apps != null && !(anTotal && last) }
+            ?.let { b -> blocks(b).associate { it.name to shown(it.ms, b) } }
         val list = a.findViewById<LinearLayout>(R.id.anApps)
         list.removeAllViews()
         val shown = now.filter { it.ms > 0 || (before?.get(it.name) ?: 0L) > 0 }
         shown.chunked(3).forEach { row ->
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             row.forEach { b ->
-                val ms = b.ms / p.days.coerceAtLeast(1)
+                val ms = shown(b.ms, p)
                 val item = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
                 item.addView(View(this).apply {
                     background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(b.color) }
