@@ -91,7 +91,7 @@ class MainActivity : Activity() {
 
     private val rows = mutableListOf<Row>()
     /** The apps in the list, as set from the TV (see [AppList]). */
-    private var apps: List<AppSpec> = emptyList()
+    @Volatile private var apps: List<AppSpec> = emptyList()
     private var addRow: View? = null
     /** The home screen always shows this week; month and year are on the cards and in the analysis. */
     private val period = Period.WEEK
@@ -101,6 +101,10 @@ class MainActivity : Activity() {
 
     private lateinit var usage: UsageRepo
     private val io = Executors.newSingleThreadExecutor()
+    /** The analysis history is slow; on its own thread it never holds up the home screen's numbers. */
+    private val historyIo = Executors.newSingleThreadExecutor()
+    private val statsQueued = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val historyQueued = java.util.concurrent.atomic.AtomicBoolean(false)
     private val main = Handler(Looper.getMainLooper())
     private var ticks = 0
 
@@ -127,7 +131,10 @@ class MainActivity : Activity() {
         override fun onReceive(c: Context, i: Intent) {
             when (i.action) {
                 Intent.ACTION_SCREEN_OFF -> replayIntro = true
-                Intent.ACTION_SCREEN_ON -> if (replayIntro && visible) { replayIntro = false; closeOverlay(); playIntro() }
+                Intent.ACTION_SCREEN_ON -> {
+                    if (visible) loadStats()
+                    if (replayIntro && visible) { replayIntro = false; closeOverlay(); playIntro() }
+                }
             }
         }
     }
@@ -187,6 +194,8 @@ class MainActivity : Activity() {
         weekCard.setOnFocusChangeListener { _, has -> findViewById<View>(R.id.weekHint).visibility = if (has) View.VISIBLE else View.GONE }
         weekCard.setOnClickListener { showAnalysis() }
         buildList()
+        // Last known numbers straight away; onStart refreshes them a moment later.
+        if (!demo && usage.hasPermission()) usage.snapshot()?.let { showStats(it, true) }
         updateClock()
         register(tickReceiver, IntentFilter(Intent.ACTION_TIME_TICK).apply {
             addAction(Intent.ACTION_TIME_CHANGED); addAction(Intent.ACTION_TIMEZONE_CHANGED)
@@ -237,6 +246,7 @@ class MainActivity : Activity() {
         unregisterReceiver(packageReceiver)
         speakers.stop()
         io.shutdownNow()
+        historyIo.shutdownNow()
         super.onDestroy()
     }
 
@@ -339,15 +349,21 @@ class MainActivity : Activity() {
 
     private fun loadStats() {
         if (demo) { showStats(demoStats(), true); return }
-        val specs = apps
+        // One refresh waiting is enough: opening the TV fires onStart and screen-on together.
+        if (!statsQueued.compareAndSet(false, true)) return
         io.execute {
+            statsQueued.set(false)
+            val specs = apps
             val ok = usage.hasPermission()
             val s = if (ok) runCatching { usage.load(specs) }
                 .onFailure { Log.w(TAG, "Could not read usage", it) }.getOrDefault(emptyMap()) else emptyMap()
             main.post { if (!isDestroyed) showStats(s, ok) }
             // Also get the analysis history ready, so its charts are there the moment it opens.
-            val h = if (ok) runCatching { usage.history(specs) }.onFailure { Log.w(TAG, "No history", it) }.getOrNull() else null
-            if (h != null) main.post { if (!isDestroyed) onHistory(h) }
+            if (ok && historyQueued.compareAndSet(false, true)) historyIo.execute {
+                historyQueued.set(false)
+                val h = runCatching { usage.history(specs) }.onFailure { Log.w(TAG, "No history", it) }.getOrNull()
+                if (h != null) main.post { if (!isDestroyed) onHistory(h) }
+            }
         }
     }
 
@@ -916,7 +932,7 @@ class MainActivity : Activity() {
     private fun loadHistory() {
         if (demo) { history = demoHistory(); fillHistory(); return }
         val specs = apps
-        io.execute {
+        historyIo.execute {
             val h = runCatching { usage.history(specs) }.onFailure { Log.w(TAG, "No history", it) }.getOrNull()
             main.post { if (h != null) onHistory(h) }
         }

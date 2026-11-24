@@ -6,6 +6,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -67,15 +68,44 @@ class UsageRepo(private val ctx: Context) {
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
+    /**
+     * The numbers from the last load, so the home screen can show them the moment it opens and
+     * refresh them after. Null when they're from an earlier week or month (they'd be wrong) or missing.
+     */
+    fun snapshot(): Map<String, AppStats>? = runCatching {
+        val j = JSONObject(prefs.getString(SNAPSHOT, null) ?: return null)
+        val now = System.currentTimeMillis()
+        if (j.getLong("week") != weekStartOf(dayStart(now)) || j.getLong("month") != monthStartOf(dayStart(now))) return null
+        val apps = j.getJSONObject("apps")
+        apps.keys().asSequence().associateWith { name ->
+            val a = apps.getJSONObject(name)
+            val d = a.getJSONArray("days")
+            AppStats(a.getLong("w"), a.getLong("m"), a.getLong("y"), LongArray(7) { d.getLong(it) }, a.getLong("l"))
+        }
+    }.getOrNull()
+
+    private fun saveSnapshot(stats: Map<String, AppStats>, today: Long) {
+        val apps = JSONObject()
+        stats.forEach { (name, s) ->
+            apps.put(name, JSONObject().put("w", s.week).put("m", s.month).put("y", s.year)
+                .put("l", s.lastWeekSoFar).put("days", org.json.JSONArray(s.weekDays.toList())))
+        }
+        val j = JSONObject().put("week", weekStartOf(today)).put("month", monthStartOf(today)).put("apps", apps)
+        prefs.edit().putString(SNAPSHOT, j.toString()).apply()
+    }
+
+    private fun weekStartOf(today: Long) = cal(today).apply { set(Calendar.DAY_OF_WEEK, Calendar.MONDAY) }
+        .let { if (it.timeInMillis > today) it.apply { add(Calendar.DAY_OF_MONTH, -7) } else it }.timeInMillis
+    private fun monthStartOf(today: Long) = cal(today).apply { set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+
     fun load(specs: List<AppSpec>): Map<String, AppStats> {
         // Saved days from an older (wrong) way of counting are thrown away and recounted.
         val now = System.currentTimeMillis()
         val today = dayStart(now)
         if (prefs.getInt("format", 1) != FORMAT) recount(today)
 
-        val weekStart = cal(today).apply { set(Calendar.DAY_OF_WEEK, Calendar.MONDAY) }
-            .let { if (it.timeInMillis > today) it.apply { add(Calendar.DAY_OF_MONTH, -7) } else it }.timeInMillis
-        val monthStart = cal(today).apply { set(Calendar.DAY_OF_MONTH, 1) }.timeInMillis
+        val weekStart = weekStartOf(today)
+        val monthStart = monthStartOf(today)
         val yearStart = cal(today).apply { set(Calendar.DAY_OF_YEAR, 1) }.timeInMillis
 
         // Every day we need per-day totals for: this month and this week.
@@ -113,7 +143,7 @@ class UsageRepo(private val ctx: Context) {
             days
         }
 
-        return specs.associate { spec ->
+        val result = specs.associate { spec ->
             fun sum(m: Map<String, Long>?) = spec.packages.sumOf { m?.get(it) ?: 0L }
             val week = perDay.filterKeys { it >= weekStart }.values.sumOf { sum(it) }
             val month = perDay.filterKeys { it >= monthStart }.values.sumOf { sum(it) }
@@ -130,6 +160,8 @@ class UsageRepo(private val ctx: Context) {
                 lastWeekSoFar = lastWeek?.sumOf { sum(it) } ?: -1L,
             )
         }
+        saveSnapshot(result, today)
+        return result
     }
 
     /**
@@ -374,6 +406,7 @@ class UsageRepo(private val ctx: Context) {
 
     companion object {
         private const val HOUR = 3_600_000L
+        private const val SNAPSHOT = "snapshot"
         /** Raise when the way days are counted changes, so saved days are recounted. */
         private const val FORMAT = 4
 
