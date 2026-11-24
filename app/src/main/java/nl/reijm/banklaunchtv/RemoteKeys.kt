@@ -37,14 +37,19 @@ class RemoteKeys : AccessibilityService() {
         return true
     }
 
-    /** The first installed app of the YouTube entry in the home list (TizenTube first). */
+    /**
+     * Our YouTube: the YouTube entry in the home list (TizenTube first), and the known ad-free
+     * apps after that, so an older saved list without TizenTube still finds it. Never the official one.
+     */
     private fun youtubeIntent(): Intent? {
-        val spec = AppList.load(this).firstOrNull { it.iconKey == "youtube" } ?: return null
+        val listed = AppList.load(this).firstOrNull { it.iconKey == "youtube" }?.packages.orEmpty()
         val pm = packageManager
-        return spec.packages.asSequence()
+        val intent = (listed + AD_FREE_YOUTUBE).distinct().asSequence()
             .filter { it != OFFICIAL_YOUTUBE }
             .mapNotNull { pm.getLeanbackLaunchIntentForPackage(it) ?: pm.getLaunchIntentForPackage(it) }
             .firstOrNull()
+        if (intent == null) Log.w(TAG, "YouTube button: no TizenTube or SmartTube installed, the TV opens its own YouTube")
+        return intent
     }
 
     /** The first installed app of an entry in the home list, by its icon (e.g. "nos"). */
@@ -63,6 +68,9 @@ class RemoteKeys : AccessibilityService() {
             event.packageName?.toString()?.let { if (it != "android" && !it.startsWith("com.android.systemui")) inFront = it }
         }
     }
+    override fun onServiceConnected() {
+        Log.i(TAG, "Remote buttons: on")
+    }
     override fun onInterrupt() {}
 
     companion object {
@@ -70,5 +78,6 @@ class RemoteKeys : AccessibilityService() {
         /** What the BRAVIA remote's YouTube button sends (seen in logcat: GlobalKeyManager keyCode=196). */
         const val YOUTUBE_KEY = 196
         private const val OFFICIAL_YOUTUBE = "com.google.android.youtube.tv"
+        private val AD_FREE_YOUTUBE = listOf("io.gh.reisxd.tizentube.cobalt", "org.smarttube.stable", "org.smarttube.beta")
     }
 }
