@@ -70,12 +70,12 @@ class UsageRepo(private val ctx: Context) {
 
     /**
      * The numbers from the last load, so the home screen can show them the moment it opens and
-     * refresh them after. Null when they're from an earlier week or month (they'd be wrong) or missing.
+     * refresh them after. Null when they're older than [FRESH] (they'd jump a moment later) or missing.
      */
     fun snapshot(): Map<String, AppStats>? = runCatching {
         val j = JSONObject(prefs.getString(SNAPSHOT, null) ?: return null)
         val now = System.currentTimeMillis()
-        if (j.getLong("week") != weekStartOf(dayStart(now)) || j.getLong("month") != monthStartOf(dayStart(now))) return null
+        if (now - j.optLong("at") !in 0..FRESH) return null
         val apps = j.getJSONObject("apps")
         apps.keys().asSequence().associateWith { name ->
             val a = apps.getJSONObject(name)
@@ -90,7 +90,7 @@ class UsageRepo(private val ctx: Context) {
             apps.put(name, JSONObject().put("w", s.week).put("m", s.month).put("y", s.year)
                 .put("l", s.lastWeekSoFar).put("days", org.json.JSONArray(s.weekDays.toList())))
         }
-        val j = JSONObject().put("week", weekStartOf(today)).put("month", monthStartOf(today)).put("apps", apps)
+        val j = JSONObject().put("at", System.currentTimeMillis()).put("week", weekStartOf(today)).put("month", monthStartOf(today)).put("apps", apps)
         prefs.edit().putString(SNAPSHOT, j.toString()).apply()
     }
 
@@ -407,6 +407,8 @@ class UsageRepo(private val ctx: Context) {
     companion object {
         private const val HOUR = 3_600_000L
         private const val SNAPSHOT = "snapshot"
+        /** Numbers older than this are out of date: hide them until new ones are counted. */
+        const val FRESH = 60_000L
         /** Raise when the way days are counted changes, so saved days are recounted. */
         private const val FORMAT = 4
 
