@@ -98,6 +98,9 @@ class MainActivity : Activity() {
     private var current = 0
     private var stats: Map<String, AppStats> = emptyMap()
     private var hasUsage = false
+    /** When the numbers on screen were counted; out of date on opening, they're hidden while loading. */
+    private var statsAt = 0L
+    private var pulse: ValueAnimator? = null
 
     private lateinit var usage: UsageRepo
     private val io = Executors.newSingleThreadExecutor()
@@ -132,7 +135,7 @@ class MainActivity : Activity() {
             when (i.action) {
                 Intent.ACTION_SCREEN_OFF -> replayIntro = true
                 Intent.ACTION_SCREEN_ON -> {
-                    if (visible) loadStats()
+                    if (visible) loadStats(opening = true)
                     if (replayIntro && visible) { replayIntro = false; closeOverlay(); playIntro() }
                 }
             }
@@ -228,7 +231,7 @@ class MainActivity : Activity() {
         super.onStart()
         visible = true
         updateClock()
-        loadStats()
+        loadStats(opening = true)
         updateSpeaker()
         if (launching) { launching = false; root.alpha = 1f; focusRow(current) }
         if (dirty) rebuildList(force = true)
@@ -347,8 +350,11 @@ class MainActivity : Activity() {
 
     // ------------------------------------------------------------------ stats
 
-    private fun loadStats() {
+    /** [opening]: the home screen just came into view (TV on, back from an app), so old numbers mustn't show. */
+    private fun loadStats(opening: Boolean = false) {
         if (demo) { showStats(demoStats(), true); return }
+        // Old numbers would show for a few seconds and then jump: pulse until new ones are in.
+        if (opening && System.currentTimeMillis() - statsAt > UsageRepo.FRESH) showLoading()
         // One refresh waiting is enough: opening the TV fires onStart and screen-on together.
         if (!statsQueued.compareAndSet(false, true)) return
         io.execute {
@@ -373,7 +379,37 @@ class MainActivity : Activity() {
         Period.YEAR -> st?.year
     } ?: 0L
 
+    private fun loadingViews() = listOf<View>(findViewById(R.id.total), findViewById(R.id.segments), findViewById(R.id.perDay))
+
+    /** Numbers out of date: blank them and let the card breathe until [showStats] fills it. */
+    private fun showLoading() {
+        if (pulse != null) return
+        stats = emptyMap()
+        hasUsage = false
+        findViewById<TextView>(R.id.totalLabel).text = period.label
+        findViewById<TextView>(R.id.total).text = "···"
+        findViewById<SegmentBar>(R.id.segments).setValues(emptyList())
+        findViewById<TextView>(R.id.perDay).text = ""
+        rows.forEach { fillRow(it) }
+        val views = loadingViews()
+        pulse = ValueAnimator.ofFloat(1f, 0.3f).apply {
+            duration = 750
+            repeatMode = ValueAnimator.REVERSE
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { a -> views.forEach { it.alpha = a.animatedValue as Float } }
+            start()
+        }
+    }
+
+    private fun stopLoading() {
+        pulse?.cancel() ?: return
+        pulse = null
+        loadingViews().forEach { it.animate().alpha(1f).setDuration(250).start() }
+    }
+
     private fun showStats(s: Map<String, AppStats>, ok: Boolean) {
+        stopLoading()
+        statsAt = System.currentTimeMillis()
         stats = s
         hasUsage = ok
         val values = apps.map { valueFor(s[it.name]) }
