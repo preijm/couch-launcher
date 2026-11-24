@@ -389,7 +389,7 @@ class MainActivity : Activity() {
         findViewById<TextView>(R.id.totalLabel).text = period.label
         findViewById<TextView>(R.id.total).text = "···"
         findViewById<SegmentBar>(R.id.segments).setValues(emptyList())
-        findViewById<TextView>(R.id.perDay).text = "Counting today's watch time…"
+        findViewById<TextView>(R.id.perDay).text = ""
         rows.forEach { fillRow(it) }
         val views = loadingViews()
         pulse = ValueAnimator.ofFloat(1f, 0.3f).apply {
