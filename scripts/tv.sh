@@ -10,6 +10,7 @@
 #   yt-restart     restart YouTube on the TV
 #   speaker-on     let the home screen switch between the Bluetooth speaker and the TV
 #   keys-on        make the remote's YouTube button open our YouTube (keys-off: undo)
+#   keys-check     YouTube button opens the wrong YouTube? shows what's off
 #   debloat        switch off the TV's trackers, ads and junk in scripts/debloat.txt (nothing is uninstalled)
 #   debloat-undo   switch back on everything debloat switched off
 #   debloat-check  after a TV update: show junk that got switched back on (debloat again to fix)
@@ -31,13 +32,26 @@ top() { "$ADB" shell dumpsys activity activities | grep -m1 -E "topResumedActivi
 is_ours() { top | grep -q "$PKG"; }
 DEBLOAT_DONE=backups/debloat-done.txt   # what "debloat" switched off on this TV, for undo
 junk_list() { sed 's/#.*//' scripts/debloat.txt | tr -d ' \r' | grep -v '^$'; }
+SVC="$PKG/.RemoteKeys"
+a11y() { "$ADB" shell settings get secure enabled_accessibility_services | tr -d '\r'; }
+# Off and on again: Android only (re)connects the button service when the setting changes,
+# so after a reinstall or a crash this brings it back.
+keys_on() {
+  cur=$(a11y)
+  rest=$(echo "$cur" | tr ':' '\n' | grep -vx "$SVC" | grep -vx null | paste -sd: - || true)
+  "$ADB" shell settings put secure enabled_accessibility_services "${rest:-null}"
+  "$ADB" shell settings put secure enabled_accessibility_services "${rest:+$rest:}$SVC"
+  "$ADB" shell settings put secure accessibility_enabled 1
+}
 is_enabled() { "$ADB" shell pm list packages -e "$1" | tr -d '\r' | grep -qx "package:$1"; }
 
 case "${1:-}" in
   connect)  "$ADB" connect "$2:5555" && echo "$2:5555" > .tv ;;
   deploy)   ./gradlew assembleDebug -q && "$ADB" install -r app/build/outputs/apk/debug/app-debug.apk \
               && "$ADB" shell appops set $PKG GET_USAGE_STATS allow \
-              && "$ADB" shell am start -n $PKG/.MainActivity ;;
+              && "$ADB" shell am start -n $PKG/.MainActivity
+            # A reinstall can leave the remote buttons disconnected; reconnect them if they were on.
+            case "$(a11y)" in *"$SVC"*) keys_on; echo "Remote buttons: reconnected" ;; esac ;;
   shot)     mkdir -p shots; f="shots/${2:-tv-$(date +%H%M%S)}.png"; "$ADB" exec-out screencap -p > "$f"; echo "$f" ;;
   packages) "$ADB" shell pm list packages -3 | sort ;;
   home-off)
@@ -64,12 +78,23 @@ case "${1:-}" in
     "$ADB" shell pm grant $PKG android.permission.BLUETOOTH_CONNECT && echo "Speaker switch allowed" ;;
   keys-on)
     # Our accessibility service takes over the YouTube button (see RemoteKeys.kt).
-    svc="$PKG/.RemoteKeys"
-    cur=$("$ADB" shell settings get secure enabled_accessibility_services | tr -d '\r')
-    case "$cur" in *"$svc"*) ;; null|"") cur="$svc" ;; *) cur="$cur:$svc" ;; esac
-    "$ADB" shell settings put secure enabled_accessibility_services "$cur"
-    "$ADB" shell settings put secure accessibility_enabled 1
+    keys_on
     echo "YouTube button: on" ;;
+  keys-check)
+    ok=1
+    case "$(a11y)" in *"$SVC"*) echo "ok   button service switched on" ;;
+      *) echo "OFF  button service is switched off: run scripts/tv.sh keys-on"; ok=0 ;; esac
+    dump=$("$ADB" shell dumpsys accessibility | tr -d '\r')
+    if echo "$dump" | grep -i "crashed services" | grep -q "RemoteKeys"; then
+      echo "OFF  button service crashed: run scripts/tv.sh keys-on"; ok=0
+    elif echo "$dump" | grep -i "bound services" | grep -q "Couch Launcher"; then
+      echo "ok   button service running"
+    else
+      echo "OFF? button service not seen running: run scripts/tv.sh keys-on"; ok=0
+    fi
+    if is_enabled $YT; then echo "ok   TizenTube installed"
+    else echo "OFF  TizenTube not installed or switched off: run scripts/tv.sh yt-install"; ok=0; fi
+    [ $ok = 1 ] && echo "All fine. Still the wrong YouTube? Press the button, then: $ADB logcat -d -s BankLaunch | tail" ;;
   keys-off)
     svc="$PKG/.RemoteKeys"
     cur=$("$ADB" shell settings get secure enabled_accessibility_services | tr -d '\r')

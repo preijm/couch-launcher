@@ -23,7 +23,7 @@ You need a Windows PC with [Android Studio](https://developer.android.com/studio
    scripts/tv.sh deploy       # build + install + open (also allows reading watch time)
    scripts/tv.sh home-off     # make it the Home screen (home-on: undo)
    scripts/tv.sh speaker-on   # allow the speaker switch
-   scripts/tv.sh keys-on      # YouTube / green / yellow buttons (keys-off: undo)
+   scripts/tv.sh keys-on      # YouTube / green / yellow buttons (keys-off: undo; keys-check if they stop working)
    scripts/tv.sh yt-install   # YouTube without ads (see below)
    scripts/tv.sh debloat      # switch off trackers, ads and junk (see below)
    ```
