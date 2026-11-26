@@ -4,6 +4,10 @@ A calm home screen (launcher) for a Sony BRAVIA with Google TV (Android TV OS 12
 
 It's a native Android app (Kotlin, no extra libraries), installed over the network with adb. The TV doesn't need to be rooted.
 
+![The home screen: clock, this week's TV time and your apps with how long you watched each](docs/home.png)
+
+![Your TV time: hours per week, each bar split by app](docs/tv-time.png)
+
 ## What it does
 - **Your apps, big and simple.** YouTube, Netflix, NOS, NPO Start and Prime Video by default; add or remove apps on the TV with "+ Add app".
 - **Watch time.** Per app this week, this month and this year, plus "≈ 2h 10m per day · 8% less than last week". Open the week card for *Your TV time*: weeks and months, each bar split by app, and what changed per app since the bar before. The TV itself only keeps about 10 days of detail, so the app saves every day itself.
